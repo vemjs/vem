@@ -8,7 +8,40 @@
         "oxlint": "^1.72.0",
         "prettier": "^3.9.4",
         "typescript": "~6.0.2",
+      },
+    },
+    "apps/web": {
+      "name": "@vemjs/web-app",
+      "version": "0.1.0",
+      "dependencies": {
+        "@vemjs/core": "workspace:*",
+        "@vemjs/renderer-vecto": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "~6.0.2",
         "vite": "^8.1.1",
+      },
+    },
+    "packages/core": {
+      "name": "@vemjs/core",
+      "version": "0.1.0",
+    },
+    "packages/lsp-client": {
+      "name": "@vemjs/lsp-client",
+      "version": "0.1.0",
+    },
+    "packages/plugin-api": {
+      "name": "@vemjs/plugin-api",
+      "version": "0.1.0",
+      "dependencies": {
+        "@vemjs/core": "workspace:*",
+      },
+    },
+    "packages/renderer-vecto": {
+      "name": "@vemjs/renderer-vecto",
+      "version": "0.1.0",
+      "dependencies": {
+        "@vemjs/core": "workspace:*",
       },
     },
   },
@@ -94,6 +127,16 @@
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
 
     "@tybys/wasm-util": ["@tybys/wasm-util@0.10.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg=="],
+
+    "@vemjs/core": ["@vemjs/core@workspace:packages/core"],
+
+    "@vemjs/lsp-client": ["@vemjs/lsp-client@workspace:packages/lsp-client"],
+
+    "@vemjs/plugin-api": ["@vemjs/plugin-api@workspace:packages/plugin-api"],
+
+    "@vemjs/renderer-vecto": ["@vemjs/renderer-vecto@workspace:packages/renderer-vecto"],
+
+    "@vemjs/web-app": ["@vemjs/web-app@workspace:apps/web"],
 
     "detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
 

@@ -1,0 +1,17 @@
+{
+  "name": "@vemjs/plugin-api",
+  "version": "0.1.0",
+  "description": "SDK interfaces for 3rd-party plugins on the Vem editor",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@vemjs/core": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@vemjs/web-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vemjs/core": "workspace:*",
+    "@vemjs/renderer-vecto": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  }
+}

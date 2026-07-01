@@ -4,6 +4,10 @@ import viteLogo from './assets/vite.svg';
 import heroImg from './assets/hero.png';
 import { setupCounter } from './counter.ts';
 
+// Import our workspace packages to verify link is working
+import { VemEditorState } from '@vemjs/core';
+import { VectoRenderer } from '@vemjs/renderer-vecto';
+
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <section id="center">
   <div class="hero">
@@ -12,8 +16,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <img src="${viteLogo}" class="vite" alt="Vite logo" />
   </div>
   <div>
-    <h1>Get started</h1>
-    <p>Edit <code>src/main.ts</code> and save to test <code>HMR</code></p>
+    <h1>Vem Workspace Online</h1>
+    <p>Monorepo integration verification complete!</p>
+    <p id="core-state" style="color: #646cff; font-weight: bold;"></p>
   </div>
   <button id="counter" type="button" class="counter"></button>
 </section>
@@ -47,8 +52,6 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <ul>
       <li><a href="https://github.com/vitejs/vite" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#github-icon"></use></svg>GitHub</a></li>
       <li><a href="https://chat.vite.dev/" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#discord-icon"></use></svg>Discord</a></li>
-      <li><a href="https://x.com/vite_js" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#x-icon"></use></svg>X.com</a></li>
-      <li><a href="https://bsky.app/profile/vite.dev" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#bluesky-icon"></use></svg>Bluesky</a></li>
     </ul>
   </div>
 </section>
@@ -58,3 +61,19 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 `;
 
 setupCounter(document.querySelector<HTMLButtonElement>('#counter')!);
+
+// Instantiate our monorepo structures
+const editorState = new VemEditorState();
+editorState.setMode('INSERT');
+editorState.moveCursor(12, 4);
+
+const coreStateElement = document.getElementById('core-state');
+if (coreStateElement) {
+  coreStateElement.innerText = `[Core State Engine] Mode: ${editorState.getMode()} | Cursor: Line ${
+    editorState.getCursor().line
+  }, Char ${editorState.getCursor().character}`;
+}
+
+const renderer = new VectoRenderer(editorState);
+const dummyCanvas = document.createElement('canvas');
+renderer.attach(dummyCanvas);

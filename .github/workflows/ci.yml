@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test, Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Lint (Oxlint)
+        run: bunx oxlint packages/core/src packages/renderer-vecto/src packages/plugin-api/src packages/lsp-client/src apps/web/src
+
+      - name: Build Core packages
+        run: |
+          bun --filter @vemjs/core build
+          bun --filter @vemjs/renderer-vecto build
+          bun --filter @vemjs/plugin-api build
+          bun --filter @vemjs/lsp-client build
+
+      - name: Build Web app
+        run: bun --filter @vemjs/web-app build
