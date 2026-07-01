@@ -20,7 +20,7 @@ jobs:
         run: bun install
 
       - name: Lint (Oxlint)
-        run: bunx oxlint packages/core/src packages/renderer-vecto/src packages/plugin-api/src packages/lsp-client/src apps/web/src
+        run: bunx oxlint packages/core/src packages/renderer-vecto/src packages/plugin-api/src packages/lsp-client/src
 
       - name: Build Core packages
         run: |
@@ -28,6 +28,3 @@ jobs:
           bun --filter @vemjs/renderer-vecto build
           bun --filter @vemjs/plugin-api build
           bun --filter @vemjs/lsp-client build
-
-      - name: Build Web app
-        run: bun --filter @vemjs/web-app build

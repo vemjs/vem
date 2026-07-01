@@ -5,8 +5,6 @@
   "description": "VectoUI-driven next-generation modal text editor Monorepo",
   "type": "module",
   "scripts": {
-    "dev:web": "bun --filter @vemjs/web-app dev",
-    "build:web": "bun --filter @vemjs/web-app build",
     "format": "prettier --write .",
     "lint": "oxlint ."
   },
@@ -17,7 +15,6 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/*",
     "plugins/*"
   ]
 }
