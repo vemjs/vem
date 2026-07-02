@@ -6,6 +6,7 @@ export { VemEditorEntity } from './VemEditorEntity';
 export { CommandBar } from './CommandBar';
 export { WorkspaceLayout, EditorPane, type PaneNode } from './WorkspaceLayout';
 export { VemWorkspace } from './Workspace';
+export { WorkspaceExplorer } from './WorkspaceExplorer';
 
 export class VectoRenderer {
   private editorState: VemEditorState;
