@@ -9,6 +9,21 @@ export interface RegisterContent {
   type: 'char' | 'line' | 'block';
 }
 
+export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'hint';
+
+export interface Diagnostic {
+  /** Zero-based line number */
+  line: number;
+  /** Zero-based start character */
+  startCharacter: number;
+  /** Zero-based end character */
+  endCharacter: number;
+  severity: DiagnosticSeverity;
+  message: string;
+  /** Optional: source language server name, e.g. 'tsserver' */
+  source?: string;
+}
+
 export type VisualType = 'char' | 'line' | 'block';
 
 export interface VisualSelection {
@@ -37,6 +52,8 @@ export class VemEditorState {
   private changeBufferCallbacks: (() => void)[] = [];
   private changeModeCallbacks: ((mode: EditorMode) => void)[] = [];
   private pluginCommandCallbacks: ((commandName: string) => void)[] = [];
+  private diagnostics: Diagnostic[] = [];
+  private publishDiagnosticsCallbacks: ((diagnostics: Diagnostic[]) => void)[] = [];
 
   constructor(initialText?: string) {
     this.buffer = new VimBuffer(initialText);
@@ -113,6 +130,25 @@ export class VemEditorState {
     this.pluginCommandCallbacks.push(callback);
   }
 
+  public onPublishDiagnostics(callback: (diagnostics: Diagnostic[]) => void): void {
+    this.publishDiagnosticsCallbacks.push(callback);
+  }
+
+  public setDiagnostics(diagnostics: Diagnostic[]): void {
+    this.diagnostics = diagnostics;
+    for (const cb of this.publishDiagnosticsCallbacks) {
+      cb(this.diagnostics);
+    }
+    // Trigger a render-change so renderers can repaint highlight overlays
+    for (const cb of this.changeCallbacks) {
+      cb();
+    }
+  }
+
+  public getDiagnostics(): Diagnostic[] {
+    return this.diagnostics;
+  }
+
   private triggerDidOpenBuffer(): void {
     for (const cb of this.didOpenBufferCallbacks) {
       cb();
@@ -140,6 +176,10 @@ export class VemEditorState {
   // --- Getters & Setters ---
   public getMode(): EditorMode {
     return this.mode;
+  }
+
+  public getText(): string {
+    return this.buffer.getText();
   }
 
   public setMode(mode: EditorMode): void {

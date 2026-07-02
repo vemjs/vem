@@ -8,7 +8,9 @@
   "scripts": {
     "build": "tsc"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@vemjs/core": "workspace:*"
+  },
   "publishConfig": {
     "access": "public"
   }

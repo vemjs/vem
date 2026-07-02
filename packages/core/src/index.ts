@@ -22,5 +22,11 @@ export {
 export { parseKeys } from './parser';
 export type { ParsedCommand } from './parser';
 export { VemEditorState } from './editor';
-export type { RegisterContent, VisualType, VisualSelection } from './editor';
+export type {
+  RegisterContent,
+  VisualType,
+  VisualSelection,
+  Diagnostic,
+  DiagnosticSeverity,
+} from './editor';
 export { ConfigLoader, type VemConfig } from './ConfigLoader';

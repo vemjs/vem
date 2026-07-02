@@ -17,6 +17,9 @@
     "packages/lsp-client": {
       "name": "@vemjs/lsp-client",
       "version": "0.1.0",
+      "dependencies": {
+        "@vemjs/core": "workspace:*",
+      },
     },
     "packages/plugin-api": {
       "name": "@vemjs/plugin-api",
