@@ -5,10 +5,19 @@
   "description": "VectoUI-driven next-generation modal text editor Monorepo",
   "type": "module",
   "scripts": {
+    "build": "bun run --filter '@vemjs/*' build",
+    "test": "bun test",
     "format": "prettier --write .",
-    "lint": "oxlint ."
+    "lint": "oxlint -c oxlintrc.json --deny-warnings .",
+    "knip": "knip",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "bun run build && changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "knip": "^6.20.0",
+    "lint-staged": "^17.0.8",
     "oxlint": "^1.72.0",
     "prettier": "^3.9.4",
     "typescript": "~6.0.2"
