@@ -32,10 +32,21 @@ export class VemEditorState {
   private saveCallbacks: (() => void)[] = [];
   private quitCallbacks: (() => void)[] = [];
   private splitCallbacks: ((direction: 'horizontal' | 'vertical') => void)[] = [];
+  private customKeybindings: Map<EditorMode, Map<string, string>> = new Map();
+  private didOpenBufferCallbacks: (() => void)[] = [];
+  private changeBufferCallbacks: (() => void)[] = [];
+  private changeModeCallbacks: ((mode: EditorMode) => void)[] = [];
+  private pluginCommandCallbacks: ((commandName: string) => void)[] = [];
 
   constructor(initialText?: string) {
     this.buffer = new VimBuffer(initialText);
     this.undoManager = new UndoManager();
+    this.buffer.onChange(() => {
+      this.triggerChangeBuffer();
+    });
+    setTimeout(() => {
+      this.triggerDidOpenBuffer();
+    }, 0);
   }
 
   // --- Callbacks & Events ---
@@ -79,6 +90,53 @@ export class VemEditorState {
     }
   }
 
+  public registerKeybinding(mode: EditorMode, keys: string, commandName: string): void {
+    if (!this.customKeybindings.has(mode)) {
+      this.customKeybindings.set(mode, new Map());
+    }
+    this.customKeybindings.get(mode)!.set(keys, commandName);
+  }
+
+  public onDidOpenBuffer(callback: () => void): void {
+    this.didOpenBufferCallbacks.push(callback);
+  }
+
+  public onDidChangeBuffer(callback: () => void): void {
+    this.changeBufferCallbacks.push(callback);
+  }
+
+  public onDidChangeMode(callback: (mode: EditorMode) => void): void {
+    this.changeModeCallbacks.push(callback);
+  }
+
+  public onExecutePluginCommand(callback: (commandName: string) => void): void {
+    this.pluginCommandCallbacks.push(callback);
+  }
+
+  private triggerDidOpenBuffer(): void {
+    for (const cb of this.didOpenBufferCallbacks) {
+      cb();
+    }
+  }
+
+  private triggerChangeBuffer(): void {
+    for (const cb of this.changeBufferCallbacks) {
+      cb();
+    }
+  }
+
+  private triggerChangeMode(mode: EditorMode): void {
+    for (const cb of this.changeModeCallbacks) {
+      cb(mode);
+    }
+  }
+
+  private executePluginCommand(commandName: string): void {
+    for (const cb of this.pluginCommandCallbacks) {
+      cb(commandName);
+    }
+  }
+
   // --- Getters & Setters ---
   public getMode(): EditorMode {
     return this.mode;
@@ -105,6 +163,7 @@ export class VemEditorState {
       this.visualSelection = null;
     }
 
+    this.triggerChangeMode(mode);
     this.triggerChange();
   }
 
@@ -161,10 +220,53 @@ export class VemEditorState {
       return;
     }
 
+    // Check custom keybindings
+    const modeBindings = this.customKeybindings.get(this.mode);
+    if (modeBindings) {
+      const currentSequence = [...this.pendingKeys, key].join('');
+      let hasExactMatch = false;
+      let hasPartialMatch = false;
+      let matchedCommand = '';
+
+      for (const [keys, cmd] of modeBindings.entries()) {
+        if (keys === currentSequence) {
+          hasExactMatch = true;
+          matchedCommand = cmd;
+        } else if (keys.startsWith(currentSequence)) {
+          hasPartialMatch = true;
+        }
+      }
+
+      if (hasExactMatch && !hasPartialMatch) {
+        this.pendingKeys = [];
+        this.executePluginCommand(matchedCommand);
+        this.triggerChange();
+        return;
+      }
+
+      if (hasPartialMatch) {
+        this.pendingKeys.push(key);
+        this.triggerChange();
+        return;
+      }
+
+      if (this.pendingKeys.length > 0) {
+        const keysToReplay = [...this.pendingKeys, key];
+        this.pendingKeys = [];
+        for (const k of keysToReplay) {
+          this.handleKeyStandard(k);
+        }
+        return;
+      }
+    }
+
+    this.handleKeyStandard(key);
+  }
+
+  private handleKeyStandard(key: string): void {
     if (this.mode === 'INSERT') {
       if (key === 'Escape') {
-        this.mode = 'NORMAL';
-        this.isInsertMutated = false;
+        this.setMode('NORMAL');
         // Move cursor back one character in Normal mode
         this.cursor.character = Math.max(0, this.cursor.character - 1);
         this.desiredCol = this.cursor.character;

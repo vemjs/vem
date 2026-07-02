@@ -2,6 +2,7 @@ import type { Position } from './index';
 
 export class VimBuffer {
   private lines: string[] = [''];
+  private changeCallbacks: (() => void)[] = [];
 
   constructor(initialText?: string) {
     if (initialText !== undefined) {
@@ -9,6 +10,16 @@ export class VimBuffer {
       if (this.lines.length === 0) {
         this.lines = [''];
       }
+    }
+  }
+
+  public onChange(callback: () => void): void {
+    this.changeCallbacks.push(callback);
+  }
+
+  private triggerChange(): void {
+    for (const cb of this.changeCallbacks) {
+      cb();
     }
   }
 
@@ -21,6 +32,7 @@ export class VimBuffer {
     if (this.lines.length === 0) {
       this.lines = [''];
     }
+    this.triggerChange();
   }
 
   public getLine(lineIdx: number): string {
@@ -42,6 +54,7 @@ export class VimBuffer {
 
     if (insertedLines.length === 1) {
       this.lines[pos.line] = before + insertedLines[0] + after;
+      this.triggerChange();
       return {
         line: pos.line,
         character: pos.character + insertedLines[0].length,
@@ -52,6 +65,7 @@ export class VimBuffer {
       const lastLine = insertedLines[insertedLines.length - 1] + after;
 
       this.lines.splice(pos.line + 1, 0, ...middleLines, lastLine);
+      this.triggerChange();
       return {
         line: pos.line + insertedLines.length - 1,
         character: insertedLines[insertedLines.length - 1].length,
@@ -83,6 +97,7 @@ export class VimBuffer {
     if (this.lines.length === 0) {
       this.lines = [''];
     }
+    this.triggerChange();
   }
 
   public deleteLines(startLineIdx: number, endLineIdx: number): string[] {
@@ -92,16 +107,19 @@ export class VimBuffer {
     if (this.lines.length === 0) {
       this.lines = [''];
     }
+    this.triggerChange();
     return deleted;
   }
 
   public insertLine(lineIdx: number, text: string): void {
     this.lines.splice(lineIdx, 0, text);
+    this.triggerChange();
   }
 
   public setLine(lineIdx: number, text: string): void {
     if (lineIdx >= 0 && lineIdx < this.lines.length) {
       this.lines[lineIdx] = text;
+      this.triggerChange();
     }
   }
 
