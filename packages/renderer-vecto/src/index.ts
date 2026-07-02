@@ -1,30 +1,48 @@
-import { VemEditorState } from '@vemjs/core';
+import { Scene } from '@vectojs/core';
+import type { VemEditorState } from '@vemjs/core';
+import { VemEditorEntity } from './VemEditorEntity';
+
+export { VemEditorEntity } from './VemEditorEntity';
+export { CommandBar } from './CommandBar';
+export { WorkspaceLayout, EditorPane, type PaneNode } from './WorkspaceLayout';
+export { VemWorkspace } from './Workspace';
+export { WorkspaceExplorer } from './WorkspaceExplorer';
 
 export class VectoRenderer {
   private editorState: VemEditorState;
-  private canvas: HTMLCanvasElement | null = null;
+  private scene: Scene | null = null;
+  private editorEntity: VemEditorEntity | null = null;
 
   constructor(editorState: VemEditorState) {
     this.editorState = editorState;
-    console.log('VectoRenderer initialized with editor state.');
   }
 
   public attach(canvas: HTMLCanvasElement): void {
-    this.canvas = canvas;
-    console.log('Attached VectoRenderer to Canvas element.');
-    this.render();
+    this.scene = new Scene(canvas);
+    this.editorEntity = new VemEditorEntity(this.editorState);
+    this.scene.add(this.editorEntity);
+    this.scene.start();
+
+    // Listen to changes in the editor state to update rendering properties
+    this.editorState.onChange(() => {
+      if (this.editorEntity) {
+        this.editorEntity.updateFromState();
+      }
+
+      if (this.editorState.getMode() === 'COMMAND') {
+        setTimeout(() => {
+          const inputEl = this.scene?.getA11yElement('vem-command-input');
+          if (inputEl) {
+            (inputEl as HTMLElement).focus();
+          }
+        }, 10);
+      }
+    });
   }
 
   public render(): void {
-    if (!this.canvas) return;
-    const mode = this.editorState.getMode();
-    const cursor = this.editorState.getCursor();
-
-    console.log(
-      `[VectoUI Render] Mode: ${mode}, Cursor: Line ${cursor.line} Char ${cursor.character}`,
-    );
-    // Future VectoUI drawing code:
-    // const ctx = this.canvas.getContext('2d');
-    // ctx.fillText(mode, ...);
+    if (this.editorEntity) {
+      this.editorEntity.updateFromState();
+    }
   }
 }

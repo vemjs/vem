@@ -9,6 +9,8 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@vectojs/core": "0.1.0",
+    "@vectojs/ui": "0.1.1",
     "@vemjs/core": "workspace:*"
   },
   "publishConfig": {
