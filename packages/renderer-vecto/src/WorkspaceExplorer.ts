@@ -49,6 +49,10 @@ export class WorkspaceExplorer extends UIComponent {
     this.add(this.panelGroup);
   }
 
+  public getWorkspace(): VemWorkspace {
+    return this.workspace;
+  }
+
   private async handleOpenFolder(): Promise<void> {
     if (typeof window === 'undefined' || !(window as any).showDirectoryPicker) {
       console.warn('File System Access API is not supported in this environment.');
