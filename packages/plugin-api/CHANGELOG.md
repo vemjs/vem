@@ -4,6 +4,13 @@
 
 ### Patch Changes
 
+- Updated dependencies [f5ccf66]
+  - @vemjs/core@0.1.1
+
+## 0.1.0
+
+### Patch Changes
+
 - 0498765: chore: release infrastructure, package metadata, and documentation scaffolding
 
   This changeset covers all release preparation work for the initial 0.1.0 publish:
@@ -40,8 +47,6 @@
 - Updated dependencies [0498765]
 - Updated dependencies [3fa4848]
   - @vemjs/core@0.2.0
-
-## 0.1.0
 
 ### Features
 

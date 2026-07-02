@@ -1,6 +1,6 @@
 {
   "name": "@vemjs/lsp-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "LSP protocol client for the Vem editor",
   "type": "module",
   "main": "./dist/index.js",

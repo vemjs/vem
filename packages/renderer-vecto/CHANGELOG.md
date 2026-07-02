@@ -4,6 +4,27 @@
 
 ### Patch Changes
 
+- f5ccf66: feat(config): add browser-compatible configuration evaluation and pane splits keybindings inheritance
+
+  - Expose `getCustomKeybindings()` in `VemEditorState` to query custom keymap bindings
+  - Inherit custom keybindings when performing pane splits inside `WorkspaceLayout`
+  - Implement `loadConfigFromJsString` in `ConfigLoader` utilizing browser-native Object URL dynamic imports
+  - Expose `onDidOpenDirectory` hook in `WorkspaceExplorer` to capture directory handle loaded events
+
+- ad81302: feat(renderer): implement diagnostic highlights (wavy underlines) and autocomplete popover menu on the Canvas editor
+
+  - Render diagnostic wavy lines under text characters based on severity levels (error, warning, info, hint)
+  - Implement interactive autocomplete popup menu rendered directly below the cursor
+  - Support active item selection and scrolling inside the canvas-rendered popover
+  - Expose methods on VemEditorEntity to control autocomplete states (setAutocompleteItems, selectNextAutocomplete, selectPrevAutocomplete, clearAutocomplete)
+
+- Updated dependencies [f5ccf66]
+  - @vemjs/core@0.1.1
+
+## 0.1.0
+
+### Patch Changes
+
 - 0498765: chore: release infrastructure, package metadata, and documentation scaffolding
 
   This changeset covers all release preparation work for the initial 0.1.0 publish:
@@ -40,8 +61,6 @@
 - Updated dependencies [0498765]
 - Updated dependencies [3fa4848]
   - @vemjs/core@0.2.0
-
-## 0.1.0
 
 ### Features
 
