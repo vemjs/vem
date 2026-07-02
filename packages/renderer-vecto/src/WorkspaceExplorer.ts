@@ -11,6 +11,10 @@ export class WorkspaceExplorer extends UIComponent {
   private treeView: TreeView | null = null;
   private openBtn: Button;
   private fsHandler: FileSystemHandler;
+  private openDirectoryCallbacks: ((
+    files: any[],
+    fsHandler: FileSystemHandler,
+  ) => void | Promise<void>)[] = [];
 
   constructor(width: number, height: number, initialText?: string) {
     super();
@@ -53,6 +57,12 @@ export class WorkspaceExplorer extends UIComponent {
     return this.workspace;
   }
 
+  public onDidOpenDirectory(
+    cb: (files: any[], fsHandler: FileSystemHandler) => void | Promise<void>,
+  ): void {
+    this.openDirectoryCallbacks.push(cb);
+  }
+
   private async handleOpenFolder(): Promise<void> {
     if (typeof window === 'undefined' || !(window as any).showDirectoryPicker) {
       console.warn('File System Access API is not supported in this environment.');
@@ -82,6 +92,15 @@ export class WorkspaceExplorer extends UIComponent {
 
       this.leftPanel.remove(this.openBtn);
       this.leftPanel.add(this.treeView);
+
+      // Trigger directory opened callbacks
+      for (const cb of this.openDirectoryCallbacks) {
+        try {
+          cb(nodes, this.fsHandler);
+        } catch (e) {
+          console.error('Error executing openDirectory callback:', e);
+        }
+      }
     } catch (err) {
       console.error('Error selecting directory:', err);
     }

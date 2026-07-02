@@ -178,6 +178,10 @@ export class VemEditorState {
     return this.mode;
   }
 
+  public getCustomKeybindings(): Map<EditorMode, Map<string, string>> {
+    return this.customKeybindings;
+  }
+
   public getText(): string {
     return this.buffer.getText();
   }

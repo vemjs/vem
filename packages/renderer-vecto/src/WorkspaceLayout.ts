@@ -78,6 +78,15 @@ export class WorkspaceLayout extends UIComponent {
 
     const newId = `pane-${Date.now()}`;
     const newState = new VemEditorState(targetNode.state.getBuffer().getText());
+
+    // Inherit old state's custom keybindings
+    const oldBindings = targetNode.state.getCustomKeybindings();
+    for (const [mode, bindings] of oldBindings.entries()) {
+      for (const [keys, cmd] of bindings.entries()) {
+        newState.registerKeybinding(mode, keys, cmd);
+      }
+    }
+
     const newLeaf: PaneNode = {
       type: 'leaf',
       id: newId,
