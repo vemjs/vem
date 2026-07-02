@@ -2,17 +2,15 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 jobs:
-  release:
-    name: Create GitHub Release
+  quality:
+    name: Quality Gate
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -20,26 +18,48 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build packages
-        run: |
-          bun --filter @vemjs/core build
-          bun --filter @vemjs/renderer-vecto build
-          bun --filter @vemjs/plugin-api build
-          bun --filter @vemjs/lsp-client build
+      - name: Build
+        run: bun run build
 
-      - name: Pack core package tarball
-        run: |
-          cd packages/core
-          npm pack
-          TARBALL_NAME=$(find . -maxdepth 1 -name "*.tgz" -exec basename {} \;)
-          echo "PACKAGE_TARBALL=${TARBALL_NAME}" >> "$GITHUB_ENV"
+      - name: Test
+        run: bun test
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v3
+      - name: Lint
+        run: bun run lint
+
+      - name: Dead code check
+        run: bun run knip
+
+  publish:
+    name: Publish to npm
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
         with:
-          files: packages/core/${{ env.PACKAGE_TARBALL }}
-          name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build all packages
+        run: bun run build
+
+      - name: Create Release PR or Publish
+        uses: changesets/action@v1
+        with:
+          publish: bun run release
+          version: bun run version-packages
+          commit: 'chore: release version bump'
+          title: 'chore: release version bump'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

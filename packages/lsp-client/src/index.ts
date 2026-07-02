@@ -11,6 +11,13 @@
 
 import type { VemEditorState, Diagnostic, DiagnosticSeverity } from '@vemjs/core';
 import { JsonRpcClient } from './JsonRpcClient';
+export type {
+  JsonRpcRequest,
+  JsonRpcNotification,
+  JsonRpcResponse,
+  JsonRpcMessage,
+  NotificationHandler,
+} from './JsonRpcClient';
 
 // ── LSP Types (subset of the spec) ─────────────────────────────────────────
 
