@@ -29,6 +29,8 @@
       "name": "@vemjs/renderer-vecto",
       "version": "0.1.0",
       "dependencies": {
+        "@vectojs/core": "0.1.0",
+        "@vectojs/ui": "0.1.1",
         "@vemjs/core": "workspace:*",
       },
     },
@@ -72,6 +74,10 @@
 
     "@oxlint/binding-win32-x64-msvc": ["@oxlint/binding-win32-x64-msvc@1.72.0", "", { "os": "win32", "cpu": "x64" }, "sha512-b2eKFD2hX7tIwmo/cyH6TDq8vzWRZ2qNHrzoGntUTmq0h3zQh/uX3eTSHCwI8OB/ADQfJCRelLItK8BsxuucDA=="],
 
+    "@vectojs/core": ["@vectojs/core@0.1.0", "", {}, "sha512-X+wFEFVcilHPnJJmJ6DudaE8TqD+xKPMQhr8mdqb6CDJ1NksQgzq0aLo5r5nsSrb7V5daVIwhBAkzom+JgLLZg=="],
+
+    "@vectojs/ui": ["@vectojs/ui@0.1.1", "", { "dependencies": { "marked": "^18.0.5" }, "peerDependencies": { "@vectojs/core": ">=0.1.0" } }, "sha512-tCmffmIVaD4hnJPtWVjxPxG9409ao4w1ycNiNjGKOApsVbK+h6BqNYH0s/Tbbe2Ob32i8dBKrxeZ4Y5LkWr1fg=="],
+
     "@vemjs/core": ["@vemjs/core@workspace:packages/core"],
 
     "@vemjs/lsp-client": ["@vemjs/lsp-client@workspace:packages/lsp-client"],
@@ -79,6 +85,8 @@
     "@vemjs/plugin-api": ["@vemjs/plugin-api@workspace:packages/plugin-api"],
 
     "@vemjs/renderer-vecto": ["@vemjs/renderer-vecto@workspace:packages/renderer-vecto"],
+
+    "marked": ["marked@18.0.5", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-S6GcvALHg6K4ohtu4E7x0a1AqhAjp6cV8KhLSyN9qVapnzJkusVBxZRcIU9AeYsbe6P1hKDusSbEOzGyyuce6w=="],
 
     "oxlint": ["oxlint@1.72.0", "", { "optionalDependencies": { "@oxlint/binding-android-arm-eabi": "1.72.0", "@oxlint/binding-android-arm64": "1.72.0", "@oxlint/binding-darwin-arm64": "1.72.0", "@oxlint/binding-darwin-x64": "1.72.0", "@oxlint/binding-freebsd-x64": "1.72.0", "@oxlint/binding-linux-arm-gnueabihf": "1.72.0", "@oxlint/binding-linux-arm-musleabihf": "1.72.0", "@oxlint/binding-linux-arm64-gnu": "1.72.0", "@oxlint/binding-linux-arm64-musl": "1.72.0", "@oxlint/binding-linux-ppc64-gnu": "1.72.0", "@oxlint/binding-linux-riscv64-gnu": "1.72.0", "@oxlint/binding-linux-riscv64-musl": "1.72.0", "@oxlint/binding-linux-s390x-gnu": "1.72.0", "@oxlint/binding-linux-x64-gnu": "1.72.0", "@oxlint/binding-linux-x64-musl": "1.72.0", "@oxlint/binding-openharmony-arm64": "1.72.0", "@oxlint/binding-win32-arm64-msvc": "1.72.0", "@oxlint/binding-win32-ia32-msvc": "1.72.0", "@oxlint/binding-win32-x64-msvc": "1.72.0" }, "peerDependencies": { "oxlint-tsgolint": ">=0.22.1", "vite-plus": "*" }, "optionalPeers": ["oxlint-tsgolint", "vite-plus"], "bin": { "oxlint": "bin/oxlint" } }, "sha512-1rhdZIP/EvoI91ABIwNU5Q8+bWf8mjrS5UzIOZld4d4bXxJvtlUhlQvaoTogIGin/qdErMOrwaIJvCSIAKTLhA=="],
 

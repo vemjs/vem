@@ -9,28 +9,17 @@ export interface Position {
   character: number;
 }
 
-export class VemEditorState {
-  private mode: EditorMode = 'NORMAL';
-  private cursor: Position = { line: 0, character: 0 };
-
-  constructor() {
-    console.log('VemEditorState initialized in core.');
-  }
-
-  public getMode(): EditorMode {
-    return this.mode;
-  }
-
-  public setMode(mode: EditorMode): void {
-    this.mode = mode;
-  }
-
-  public getCursor(): Position {
-    return this.cursor;
-  }
-
-  public moveCursor(lineOffset: number, charOffset: number): void {
-    this.cursor.line = Math.max(0, this.cursor.line + lineOffset);
-    this.cursor.character = Math.max(0, this.cursor.character + charOffset);
-  }
-}
+export { VimBuffer, UndoManager } from './buffer';
+export {
+  getCharClass,
+  nextPosition,
+  prevPosition,
+  getWordForward,
+  getWordBackward,
+  getWordEndForward,
+  getTextObjectRange,
+} from './motions';
+export { parseKeys } from './parser';
+export type { ParsedCommand } from './parser';
+export { VemEditorState } from './editor';
+export type { RegisterContent, VisualType, VisualSelection } from './editor';
