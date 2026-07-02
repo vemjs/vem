@@ -12,6 +12,8 @@ export class VemEditorEntity extends UIComponent {
   private charWidth = 8.4;
   private lineHeight = 20;
   private scrollY = 0; // scroll offset in lines
+  private autocompleteItems: { label: string; detail?: string }[] = [];
+  private selectedAutocompleteIndex = 0;
 
   constructor(editorState: VemEditorState) {
     super();
@@ -102,6 +104,41 @@ export class VemEditorEntity extends UIComponent {
     }
   }
 
+  public setAutocompleteItems(items: { label: string; detail?: string }[]): void {
+    this.autocompleteItems = items;
+    this.selectedAutocompleteIndex = 0;
+  }
+
+  public getAutocompleteItems(): { label: string; detail?: string }[] {
+    return this.autocompleteItems;
+  }
+
+  public selectNextAutocomplete(): void {
+    if (this.autocompleteItems.length > 0) {
+      this.selectedAutocompleteIndex =
+        (this.selectedAutocompleteIndex + 1) % this.autocompleteItems.length;
+    }
+  }
+
+  public selectPrevAutocomplete(): void {
+    if (this.autocompleteItems.length > 0) {
+      this.selectedAutocompleteIndex =
+        (this.selectedAutocompleteIndex - 1 + this.autocompleteItems.length) %
+        this.autocompleteItems.length;
+    }
+  }
+
+  public getSelectedAutocomplete(): { label: string; detail?: string } | null {
+    if (this.autocompleteItems.length > 0) {
+      return this.autocompleteItems[this.selectedAutocompleteIndex];
+    }
+    return null;
+  }
+
+  public clearAutocomplete(): void {
+    this.autocompleteItems = [];
+  }
+
   public render(r: IRenderer): void {
     // 1. Draw editor background
     r.beginPath();
@@ -183,6 +220,32 @@ export class VemEditorEntity extends UIComponent {
       }
     }
 
+    // 3.5. Draw LSP Diagnostics (wavy underline)
+    const diagnostics = this.editorState.getDiagnostics();
+    for (const diag of diagnostics) {
+      const lineText = this.editorState.getBuffer().getLine(diag.line);
+      const startChar = diag.startCharacter;
+      // If endCharacter is same or not specified, underline at least 1 character width
+      const endChar = Math.max(startChar + 1, Math.min(diag.endCharacter, lineText.length));
+
+      const startX = gutterWidth + 5 + startChar * this.charWidth;
+      const y = 5 + diag.line * this.lineHeight + this.lineHeight - 2;
+      const length = (endChar - startChar) * this.charWidth;
+
+      let color = '#ef4444'; // default error red
+      if (diag.severity === 'warning') color = '#f97316'; // orange
+      else if (diag.severity === 'info') color = '#3b82f6'; // blue
+      else if (diag.severity === 'hint') color = '#10b981'; // emerald green
+
+      r.beginPath();
+      r.moveTo(startX, y);
+      for (let offset = 0; offset <= length; offset += 2) {
+        const waveY = y + (offset % 4 === 0 ? 1 : -1);
+        r.lineTo(startX + offset, waveY);
+      }
+      r.stroke(color, 1.2);
+    }
+
     // 4. Draw Vim cursor
     const cursor = this.editorState.getCursor();
     const cursorX = gutterWidth + 5 + cursor.character * this.charWidth;
@@ -230,6 +293,71 @@ export class VemEditorEntity extends UIComponent {
         r.fillText(pendingText, 120, statusY + 18, '12px monospace', '#e2e8f0');
       }
       r.fillText(posText, this.width - 60, statusY + 18, '12px monospace', '#94a3b8');
+    }
+
+    // 6. Draw autocomplete popup menu
+    if (this.autocompleteItems.length > 0) {
+      // Calculate popup dimensions
+      const maxLabelLen = Math.max(
+        ...this.autocompleteItems.map(
+          (item) => item.label.length + (item.detail ? item.detail.length + 3 : 0),
+        ),
+      );
+      const popupWidth = Math.max(160, maxLabelLen * 7.5 + 20);
+      const popupHeight = Math.min(200, this.autocompleteItems.length * 18 + 6);
+
+      // Translate coordinates from buffer space to screen space
+      let popupX = cursorX;
+      let popupY = cursorY + this.lineHeight - this.scrollY * this.lineHeight;
+
+      // Adjust positioning if it overflows screen boundaries
+      if (popupX + popupWidth > this.width) {
+        popupX = Math.max(gutterWidth + 5, this.width - popupWidth - 5);
+      }
+      if (popupY + popupHeight > statusY) {
+        // Render above the cursor if it would overlay/go past the status bar
+        popupY = cursorY - this.scrollY * this.lineHeight - popupHeight;
+      }
+
+      // Draw background panel
+      r.beginPath();
+      r.roundRect(popupX, popupY, popupWidth, popupHeight, 4);
+      r.closePath();
+      r.fill('#1e293b'); // slate-800
+      r.stroke('#475569', 1.2); // slate-600 border
+
+      // Draw menu items
+      r.save();
+      r.clip(popupX, popupY, popupWidth, popupHeight);
+      for (let i = 0; i < this.autocompleteItems.length; i++) {
+        const item = this.autocompleteItems[i];
+        const itemY = popupY + 3 + i * 18;
+        if (itemY + 18 < popupY || itemY > popupY + popupHeight) continue;
+
+        // Draw active row selection background
+        if (i === this.selectedAutocompleteIndex) {
+          r.beginPath();
+          r.moveTo(popupX + 2, itemY);
+          r.lineTo(popupX + popupWidth - 2, itemY);
+          r.lineTo(popupX + popupWidth - 2, itemY + 18);
+          r.lineTo(popupX + 2, itemY + 18);
+          r.closePath();
+          r.fill('#334155'); // slate-700
+        }
+
+        const labelColor = i === this.selectedAutocompleteIndex ? '#38bdf8' : '#f8fafc'; // sky-400 or slate-50
+        r.fillText(item.label, popupX + 8, itemY + 13, '12px monospace', labelColor);
+        if (item.detail) {
+          r.fillText(
+            `  ${item.detail}`,
+            popupX + 8 + item.label.length * 7.5,
+            itemY + 13,
+            '10px monospace',
+            '#64748b',
+          );
+        }
+      }
+      r.restore();
     }
   }
 }
