@@ -1,6 +1,6 @@
 {
   "name": "@vemjs/lsp-client",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "LSP protocol client for the Vem editor",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,7 +9,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@vemjs/core": "workspace:*"
+    "@vemjs/core": "^0.1.3"
   },
   "publishConfig": {
     "access": "public"

@@ -1,5 +1,11 @@
 # @vemjs/core
 
+## 0.1.3
+
+### Patch Changes
+
+- fix: update workspace dependencies to standard registry versions in package.json files
+
 ## 0.1.2
 
 ### Patch Changes
