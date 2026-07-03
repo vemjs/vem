@@ -1,5 +1,11 @@
 # @vemjs/core
 
+## 0.1.2
+
+### Patch Changes
+
+- 02d5968: fix: replace workspace protocol references with exact versions on npm publish
+
 ## 0.1.1
 
 ### Patch Changes

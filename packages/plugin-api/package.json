@@ -1,6 +1,6 @@
 {
   "name": "@vemjs/plugin-api",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "SDK interfaces for 3rd-party plugins on the Vem editor",
   "type": "module",
   "main": "./dist/index.js",
