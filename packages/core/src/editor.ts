@@ -49,7 +49,7 @@ export interface VemLayoutConfig {
   sidebarWidth: number;
 }
 
-export const DEFAULT_THEME: VemTheme = {
+const DEFAULT_THEME: VemTheme = {
   bg: '#0f172a',
   fg: '#e2e8f0',
   sidebarBg: '#090d16',
@@ -60,7 +60,7 @@ export const DEFAULT_THEME: VemTheme = {
   accent: '#8b5cf6',
 };
 
-export const DEFAULT_LAYOUT_CONFIG: VemLayoutConfig = {
+const DEFAULT_LAYOUT_CONFIG: VemLayoutConfig = {
   sidebarPosition: 'left',
   statusBarPosition: 'bottom',
   sidebarWidth: 240,
