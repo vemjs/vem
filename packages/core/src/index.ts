@@ -30,5 +30,11 @@ export type {
   DiagnosticSeverity,
   VemTheme,
   VemLayoutConfig,
+  StatuslineSegment,
+  StatuslineLayout,
+  FloatingPopupItem,
+  FloatingPopupConfig,
+  TextSpan,
+  GutterDecoration,
 } from './editor';
 export { ConfigLoader, type VemConfig } from './ConfigLoader';

@@ -49,6 +49,43 @@ export interface VemLayoutConfig {
   sidebarWidth: number;
 }
 
+export interface StatuslineSegment {
+  text: string;
+  color?: string;
+  bg?: string;
+  bold?: boolean;
+}
+
+export interface StatuslineLayout {
+  left: StatuslineSegment[];
+  right: StatuslineSegment[];
+}
+
+export interface FloatingPopupItem {
+  label: string;
+  detail?: string;
+  value: any;
+}
+
+export interface FloatingPopupConfig {
+  title: string;
+  items: FloatingPopupItem[];
+  onSelect: (item: FloatingPopupItem) => void;
+  onCancel?: () => void;
+}
+
+export interface TextSpan {
+  text: string;
+  color?: string;
+  bold?: boolean;
+}
+
+export interface GutterDecoration {
+  type: 'add' | 'change' | 'delete';
+  symbol: string;
+  color: string;
+}
+
 const DEFAULT_THEME: VemTheme = {
   bg: '#0f172a',
   fg: '#e2e8f0',
@@ -69,6 +106,14 @@ const DEFAULT_LAYOUT_CONFIG: VemLayoutConfig = {
 export class VemEditorState {
   public theme: VemTheme = { ...DEFAULT_THEME };
   public layoutConfig: VemLayoutConfig = { ...DEFAULT_LAYOUT_CONFIG };
+  public statuslineLayout: StatuslineLayout = { left: [], right: [] };
+  public fileUri: string = 'untitled';
+  public activePopup: FloatingPopupConfig | null = null;
+  public activePopupIndex = 0;
+  public popupFilterText = '';
+  public projectFiles: string[] = [];
+  public highlightLine?: (lineText: string, lineIndex: number) => TextSpan[];
+  public gutterDecorations: Map<number, GutterDecoration> = new Map();
   private mode: EditorMode = 'NORMAL';
   private cursor: Position = { line: 0, character: 0 };
   private desiredCol: number = 0;
@@ -187,6 +232,100 @@ export class VemEditorState {
     this.triggerChange();
   }
 
+  public setStatuslineLayout(layout: StatuslineLayout): void {
+    this.statuslineLayout = layout;
+    this.triggerChange();
+  }
+
+  public setFileUri(uri: string): void {
+    this.fileUri = uri;
+    this.triggerChange();
+  }
+
+  public setSyntaxHighlighter(
+    highlighter: (lineText: string, lineIndex: number) => TextSpan[],
+  ): void {
+    this.highlightLine = highlighter;
+    this.triggerChange();
+  }
+
+  public setGutterDecorations(decorations: Map<number, GutterDecoration>): void {
+    this.gutterDecorations = decorations;
+    this.triggerChange();
+  }
+
+  public showPopup(config: FloatingPopupConfig): void {
+    this.activePopup = config;
+    this.activePopupIndex = 0;
+    this.popupFilterText = '';
+    this.triggerChange();
+  }
+
+  public closePopup(): void {
+    this.activePopup = null;
+    this.activePopupIndex = 0;
+    this.popupFilterText = '';
+    this.triggerChange();
+  }
+
+  public getFilteredPopupItems(): FloatingPopupItem[] {
+    if (!this.activePopup) return [];
+    if (!this.popupFilterText) return this.activePopup.items;
+    const query = this.popupFilterText.toLowerCase();
+    return this.activePopup.items.filter(
+      (item) =>
+        item.label.toLowerCase().includes(query) ||
+        (item.detail && item.detail.toLowerCase().includes(query)),
+    );
+  }
+
+  private handlePopupKey(key: string): void {
+    const items = this.getFilteredPopupItems();
+    if (key === 'Escape') {
+      const onCancel = this.activePopup?.onCancel;
+      this.closePopup();
+      if (onCancel) onCancel();
+      return;
+    }
+    if (key === 'Enter') {
+      if (items.length > 0) {
+        const selected = items[this.activePopupIndex];
+        const onSelect = this.activePopup!.onSelect;
+        this.closePopup();
+        onSelect(selected);
+      } else {
+        this.closePopup();
+      }
+      return;
+    }
+    if (key === 'ArrowDown' || key === 'j') {
+      if (items.length > 0) {
+        this.activePopupIndex = (this.activePopupIndex + 1) % items.length;
+        this.triggerChange();
+      }
+      return;
+    }
+    if (key === 'ArrowUp' || key === 'k') {
+      if (items.length > 0) {
+        this.activePopupIndex = (this.activePopupIndex - 1 + items.length) % items.length;
+        this.triggerChange();
+      }
+      return;
+    }
+    if (key === 'Backspace') {
+      this.popupFilterText = this.popupFilterText.substring(0, this.popupFilterText.length - 1);
+      this.activePopupIndex = 0;
+      this.triggerChange();
+      return;
+    }
+    if (key.length === 1) {
+      this.popupFilterText += key;
+      this.activePopupIndex = 0;
+      this.triggerChange();
+      return;
+    }
+  }
+
   public getDiagnostics(): Diagnostic[] {
     return this.diagnostics;
   }
@@ -279,6 +418,10 @@ export class VemEditorState {
 
   // --- Key Input Entry Point ---
   public handleKey(key: string): void {
+    if (this.activePopup) {
+      this.handlePopupKey(key);
+      return;
+    }
     if (this.mode === 'COMMAND') {
       if (key === 'Escape') {
         this.setMode('NORMAL');

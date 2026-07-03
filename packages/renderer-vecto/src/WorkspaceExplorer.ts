@@ -63,6 +63,22 @@ export class WorkspaceExplorer extends UIComponent {
     this.openDirectoryCallbacks.push(cb);
   }
 
+  private flattenFiles(nodes: any[]): string[] {
+    const list: string[] = [];
+    const recurse = (nodeList: any[], prefix: string) => {
+      for (const node of nodeList) {
+        const path = prefix ? `${prefix}/${node.label}` : node.label;
+        if (node.children && node.children.length > 0) {
+          recurse(node.children, path);
+        } else if (!node.children || node.children.length === 0) {
+          list.push(path);
+        }
+      }
+    };
+    recurse(nodes, '');
+    return list;
+  }
+
   private async handleOpenFolder(): Promise<void> {
     if (typeof window === 'undefined' || !(window as any).showDirectoryPicker) {
       console.warn('File System Access API is not supported in this environment.');
@@ -72,6 +88,13 @@ export class WorkspaceExplorer extends UIComponent {
     try {
       const rootHandle = await (window as any).showDirectoryPicker();
       const nodes = await this.fsHandler.readDirectory(rootHandle);
+
+      // Cache all file paths for search plugins (like Telescope)
+      const fileList = this.flattenFiles(nodes);
+      const activeState = this.getActiveEditorState();
+      if (activeState) {
+        activeState.projectFiles = fileList;
+      }
 
       this.treeView = new TreeView({
         nodes,

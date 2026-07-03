@@ -76,9 +76,23 @@ export class VemEditorEntity extends UIComponent {
     this.gutterText.setText(lineNums.join('\n'));
 
     // 4. Set editor body text
-    const spans = buffer.getLines().map((line, idx) => {
+    const spans: any[] = [];
+    const lines = buffer.getLines();
+    lines.forEach((line, idx) => {
       const suffix = idx === lineCount - 1 ? '' : '\n';
-      return { text: line + suffix };
+      const highlight = (this.editorState as any).highlightLine;
+      if (highlight) {
+        const lineSpans = highlight(line, idx);
+        if (lineSpans.length > 0) {
+          const lastSpan = { ...lineSpans[lineSpans.length - 1] };
+          lastSpan.text += suffix;
+          spans.push(...lineSpans.slice(0, -1), lastSpan);
+        } else {
+          spans.push({ text: suffix });
+        }
+      } else {
+        spans.push({ text: line + suffix });
+      }
     });
     this.bodyText.setSpans(spans);
 
@@ -181,6 +195,21 @@ export class VemEditorEntity extends UIComponent {
 
     r.save();
     r.translate(0, -this.scrollY * this.lineHeight + contentOffsetY);
+
+    // 2.5. Draw Gutter Decorations (Git diff signs)
+    const decs = (this.editorState as any).gutterDecorations;
+    if (decs && decs.size > 0) {
+      for (let l = 0; l < lineCount; l++) {
+        const dec = decs.get(l);
+        if (dec) {
+          const decY = 5 + l * this.lineHeight;
+          r.beginPath();
+          r.roundRect(1, decY + 2, 3, this.lineHeight - 4, 1.5);
+          r.closePath();
+          r.fill(dec.color);
+        }
+      }
+    }
 
     // 3. Draw Visual Mode selections
     const selection = this.editorState.getVisualSelection();
@@ -298,7 +327,69 @@ export class VemEditorEntity extends UIComponent {
     r.closePath();
     r.fill(theme.statusBarBg);
 
-    if (mode !== 'COMMAND') {
+    const sl = this.editorState.statuslineLayout;
+    if (
+      mode !== 'COMMAND' &&
+      ((sl.left && sl.left.length > 0) || (sl.right && sl.right.length > 0))
+    ) {
+      // Custom statusline layout (lualine-like)
+      let startX = 0;
+      if (sl.left) {
+        for (const segment of sl.left) {
+          const textWidth = (r as any).measureText
+            ? (r as any).measureText(segment.text).width
+            : segment.text.length * 8;
+          const font = segment.bold ? 'bold 12px monospace' : '12px monospace';
+          const color = segment.color || theme.statusBarFg;
+
+          if (segment.bg) {
+            const blockWidth = textWidth + 20;
+            r.beginPath();
+            r.moveTo(startX, statusY);
+            r.lineTo(startX + blockWidth, statusY);
+            r.lineTo(startX + blockWidth, statusY + statusBarHeight);
+            r.lineTo(startX, statusY + statusBarHeight);
+            r.closePath();
+            r.fill(segment.bg);
+
+            r.fillText(segment.text, startX + 10, statusY + 18, font, color);
+            startX += blockWidth;
+          } else {
+            r.fillText(segment.text, startX + 10, statusY + 18, font, color);
+            startX += textWidth + 15;
+          }
+        }
+      }
+
+      let endX = this.width;
+      if (sl.right) {
+        for (const segment of sl.right) {
+          const textWidth = (r as any).measureText
+            ? (r as any).measureText(segment.text).width
+            : segment.text.length * 8;
+          const font = segment.bold ? 'bold 12px monospace' : '12px monospace';
+          const color = segment.color || theme.statusBarFg;
+
+          if (segment.bg) {
+            const blockWidth = textWidth + 20;
+            endX -= blockWidth;
+            r.beginPath();
+            r.moveTo(endX, statusY);
+            r.lineTo(endX + blockWidth, statusY);
+            r.lineTo(endX + blockWidth, statusY + statusBarHeight);
+            r.lineTo(endX, statusY + statusBarHeight);
+            r.closePath();
+            r.fill(segment.bg);
+
+            r.fillText(segment.text, endX + 10, statusY + 18, font, color);
+          } else {
+            endX -= textWidth + 15;
+            r.fillText(segment.text, endX + 10, statusY + 18, font, color);
+          }
+        }
+      }
+    } else if (mode !== 'COMMAND') {
+      // Default fallback status bar
       const modeText = `-- ${mode} --`;
       const posText = `${cursor.line + 1}:${cursor.character + 1}`;
       const pendingKeys = this.editorState.getPendingKeys();
@@ -375,6 +466,126 @@ export class VemEditorEntity extends UIComponent {
         }
       }
       r.restore();
+    }
+
+    // 7. Draw centered Floating Popup Picker Modal (Telescope-like)
+    const popup = this.editorState.activePopup;
+    if (popup) {
+      const modalW = Math.min(550, this.width - 40);
+      const modalH = Math.min(380, this.height - 80);
+      const modalX = (this.width - modalW) / 2;
+      const modalY = (this.height - modalH) / 2;
+
+      // Draw modal backdrop shade
+      r.beginPath();
+      r.roundRect(0, 0, this.width, this.height, 0);
+      r.closePath();
+      r.fill('rgba(15, 23, 42, 0.6)'); // Translucent dark overlay
+
+      // Draw main panel
+      r.beginPath();
+      r.roundRect(modalX, modalY, modalW, modalH, 6);
+      r.closePath();
+      r.fill(theme.bg);
+      r.stroke(theme.accent, 1.5);
+
+      // Title
+      r.fillText(
+        popup.title.toUpperCase(),
+        modalX + 15,
+        modalY + 28,
+        'bold 13px Outfit, monospace',
+        theme.accent,
+      );
+
+      // Input Search Bar
+      r.beginPath();
+      r.roundRect(modalX + 15, modalY + 42, modalW - 30, 28, 4);
+      r.closePath();
+      r.fill(theme.statusBarBg);
+      r.stroke(theme.accent + '44', 1);
+
+      const queryText = `> ${this.editorState.popupFilterText}`;
+      r.fillText(queryText, modalX + 25, modalY + 60, '13px monospace', theme.fg);
+
+      // Draw flashing block cursor in search bar
+      const cursorOffset = (r as any).measureText
+        ? (r as any).measureText(queryText).width
+        : queryText.length * 8;
+      r.beginPath();
+      r.roundRect(modalX + 25 + cursorOffset + 2, modalY + 48, 8, 15, 0);
+      r.closePath();
+      r.fill(theme.accent);
+
+      // Divider line
+      r.beginPath();
+      r.moveTo(modalX + 15, modalY + 82);
+      r.lineTo(modalX + modalW - 15, modalY + 82);
+      r.closePath();
+      r.stroke(theme.gutterBg, 1.2);
+
+      // Render filtered list items
+      const items = this.editorState.getFilteredPopupItems();
+      const listStartY = modalY + 95;
+      const itemH = 22;
+      const maxVisibleItems = 11;
+      const startIndex = Math.max(
+        0,
+        Math.min(
+          this.editorState.activePopupIndex - Math.floor(maxVisibleItems / 2),
+          items.length - maxVisibleItems,
+        ),
+      );
+
+      r.save();
+      r.clip(modalX + 15, modalY + 85, modalW - 30, modalH - 100);
+
+      for (let i = 0; i < Math.min(maxVisibleItems, items.length); i++) {
+        const itemIdx = startIndex + i;
+        const item = items[itemIdx];
+        if (!item) break;
+
+        const rowY = listStartY + i * itemH;
+
+        if (itemIdx === this.editorState.activePopupIndex) {
+          // Draw active row highlight background
+          r.beginPath();
+          r.roundRect(modalX + 15, rowY, modalW - 30, itemH, 4);
+          r.closePath();
+          r.fill(theme.accent + '33');
+        }
+
+        const labelColor = itemIdx === this.editorState.activePopupIndex ? theme.accent : theme.fg;
+        r.fillText(
+          item.label,
+          modalX + 25,
+          rowY + 15,
+          itemIdx === this.editorState.activePopupIndex ? 'bold 12px monospace' : '12px monospace',
+          labelColor,
+        );
+
+        if (item.detail) {
+          const detailX = modalX + modalW - 35 - item.detail.length * 7.5;
+          r.fillText(
+            item.detail,
+            Math.max(modalX + 250, detailX),
+            rowY + 15,
+            '10px monospace',
+            theme.gutterFg,
+          );
+        }
+      }
+      r.restore();
+
+      // Draw item counts indicator
+      const countText = `${this.editorState.activePopupIndex + 1}/${items.length}`;
+      r.fillText(
+        countText,
+        modalX + modalW - 20 - countText.length * 7.5,
+        modalY + 28,
+        '11px monospace',
+        theme.gutterFg,
+      );
     }
   }
 }
