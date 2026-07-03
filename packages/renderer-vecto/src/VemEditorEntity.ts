@@ -57,28 +57,32 @@ export class VemEditorEntity extends UIComponent {
     const buffer = this.editorState.getBuffer();
     const cursor = this.editorState.getCursor();
     const lineCount = buffer.getLineCount();
+    const theme = this.editorState.theme;
+    const layout = this.editorState.layoutConfig;
 
     // 1. Calculate gutter width dynamically
     const maxLineDigits = Math.max(2, lineCount.toString().length);
     const gutterWidth = maxLineDigits * this.charWidth + 15;
 
-    // 2. Set line numbers text
+    // 2. Sync theme colors
+    this.gutterText.color = theme.gutterFg;
+    this.bodyText.color = theme.fg;
+
+    // 3. Set line numbers text
     const lineNums: string[] = [];
     for (let i = 1; i <= lineCount; i++) {
       lineNums.push(i.toString().padStart(maxLineDigits, ' '));
     }
     this.gutterText.setText(lineNums.join('\n'));
-    this.gutterText.setPosition(5, 5);
 
-    // 3. Set editor body text
+    // 4. Set editor body text
     const spans = buffer.getLines().map((line, idx) => {
       const suffix = idx === lineCount - 1 ? '' : '\n';
       return { text: line + suffix };
     });
     this.bodyText.setSpans(spans);
-    this.bodyText.setPosition(gutterWidth + 5, 5);
 
-    // 4. Handle viewport scrolling to keep cursor visible
+    // 5. Handle viewport scrolling to keep cursor visible
     const visibleLines = Math.floor((this.height - 35) / this.lineHeight); // reserve 35px for status bar
     if (cursor.line >= this.scrollY + visibleLines) {
       this.scrollY = cursor.line - visibleLines + 1;
@@ -86,13 +90,9 @@ export class VemEditorEntity extends UIComponent {
       this.scrollY = cursor.line;
     }
 
-    // Update children scroll positions
-    const scrollOffsetY = -this.scrollY * this.lineHeight;
-    this.gutterText.setPosition(5, 5 + scrollOffsetY);
-    this.bodyText.setPosition(gutterWidth + 5, 5 + scrollOffsetY);
-
-    // 5. Handle CommandBar visibility
-    if (this.editorState.getMode() === 'COMMAND') {
+    // 6. Position and layout based on statusBarPosition
+    const hasCommandBar = this.editorState.getMode() === 'COMMAND';
+    if (hasCommandBar) {
       if (!this.children.includes(this.commandBar)) {
         this.add(this.commandBar);
       }
@@ -101,6 +101,17 @@ export class VemEditorEntity extends UIComponent {
       if (this.children.includes(this.commandBar)) {
         this.remove(this.commandBar);
       }
+    }
+
+    const scrollOffsetY = -this.scrollY * this.lineHeight;
+    if (layout.statusBarPosition === 'top') {
+      this.commandBar.setPosition(0, 0);
+      this.gutterText.setPosition(5, 5 + scrollOffsetY + 30);
+      this.bodyText.setPosition(gutterWidth + 5, 5 + scrollOffsetY + 30);
+    } else {
+      this.commandBar.setPosition(0, this.height - 30);
+      this.gutterText.setPosition(5, 5 + scrollOffsetY);
+      this.bodyText.setPosition(gutterWidth + 5, 5 + scrollOffsetY);
     }
   }
 
@@ -140,6 +151,9 @@ export class VemEditorEntity extends UIComponent {
   }
 
   public render(r: IRenderer): void {
+    const theme = this.editorState.theme;
+    const layout = this.editorState.layoutConfig;
+
     // 1. Draw editor background
     r.beginPath();
     r.moveTo(0, 0);
@@ -147,7 +161,7 @@ export class VemEditorEntity extends UIComponent {
     r.lineTo(this.width, this.height);
     r.lineTo(0, this.height);
     r.closePath();
-    r.fill('#0f172a'); // slate-900
+    r.fill(theme.bg);
 
     const lineCount = this.editorState.getBuffer().getLineCount();
     const maxLineDigits = Math.max(2, lineCount.toString().length);
@@ -160,11 +174,13 @@ export class VemEditorEntity extends UIComponent {
     r.lineTo(gutterWidth, this.height);
     r.lineTo(0, this.height);
     r.closePath();
-    r.fill('#1e293b'); // slate-800
+    r.fill(theme.gutterBg);
 
-    // Apply scrolling transformation for cursor and selections
+    // Apply scrolling transformation (with offset if statusBar is top)
+    const contentOffsetY = layout.statusBarPosition === 'top' ? 30 : 0;
+
     r.save();
-    r.translate(0, -this.scrollY * this.lineHeight);
+    r.translate(0, -this.scrollY * this.lineHeight + contentOffsetY);
 
     // 3. Draw Visual Mode selections
     const selection = this.editorState.getVisualSelection();
@@ -191,7 +207,7 @@ export class VemEditorEntity extends UIComponent {
         r.lineTo(x + w, y + h);
         r.lineTo(x, y + h);
         r.closePath();
-        r.fill('rgba(56, 189, 248, 0.3)'); // sky-400 opacity
+        r.fill(theme.accent + '44'); // Theme accent with 25% opacity
       };
 
       if (type === 'line') {
@@ -259,28 +275,28 @@ export class VemEditorEntity extends UIComponent {
       r.lineTo(cursorX + 2, cursorY + this.lineHeight);
       r.lineTo(cursorX, cursorY + this.lineHeight);
       r.closePath();
-      r.fill('#f43f5e'); // rose-500
+      r.fill(theme.accent);
     } else {
       r.moveTo(cursorX, cursorY);
       r.lineTo(cursorX + this.charWidth, cursorY);
       r.lineTo(cursorX + this.charWidth, cursorY + this.lineHeight);
       r.lineTo(cursorX, cursorY + this.lineHeight);
       r.closePath();
-      r.fill('rgba(56, 189, 248, 0.7)'); // sky-400 opacity
+      r.fill(theme.accent + '88'); // 50% opacity accent
     }
 
     r.restore(); // Restore scroll transform
 
-    // 5. Draw status bar at the bottom
+    // 5. Draw status bar
     const statusBarHeight = 30;
-    const statusY = this.height - statusBarHeight;
+    const statusY = layout.statusBarPosition === 'top' ? 0 : this.height - statusBarHeight;
     r.beginPath();
     r.moveTo(0, statusY);
     r.lineTo(this.width, statusY);
-    r.lineTo(this.width, this.height);
-    r.lineTo(0, this.height);
+    r.lineTo(this.width, statusY + statusBarHeight);
+    r.lineTo(0, statusY + statusBarHeight);
     r.closePath();
-    r.fill('#1e293b'); // slate-800
+    r.fill(theme.statusBarBg);
 
     if (mode !== 'COMMAND') {
       const modeText = `-- ${mode} --`;
@@ -288,11 +304,11 @@ export class VemEditorEntity extends UIComponent {
       const pendingKeys = this.editorState.getPendingKeys();
       const pendingText = pendingKeys.length > 0 ? pendingKeys.join('') : '';
 
-      r.fillText(modeText, 10, statusY + 18, 'bold 12px monospace', '#38bdf8');
+      r.fillText(modeText, 10, statusY + 18, 'bold 12px monospace', theme.accent);
       if (pendingText) {
-        r.fillText(pendingText, 120, statusY + 18, '12px monospace', '#e2e8f0');
+        r.fillText(pendingText, 120, statusY + 18, '12px monospace', theme.statusBarFg);
       }
-      r.fillText(posText, this.width - 60, statusY + 18, '12px monospace', '#94a3b8');
+      r.fillText(posText, this.width - 60, statusY + 18, '12px monospace', theme.statusBarFg);
     }
 
     // 6. Draw autocomplete popup menu
@@ -308,23 +324,24 @@ export class VemEditorEntity extends UIComponent {
 
       // Translate coordinates from buffer space to screen space
       let popupX = cursorX;
-      let popupY = cursorY + this.lineHeight - this.scrollY * this.lineHeight;
+      let popupY = cursorY + this.lineHeight - this.scrollY * this.lineHeight + contentOffsetY;
 
       // Adjust positioning if it overflows screen boundaries
       if (popupX + popupWidth > this.width) {
         popupX = Math.max(gutterWidth + 5, this.width - popupWidth - 5);
       }
-      if (popupY + popupHeight > statusY) {
-        // Render above the cursor if it would overlay/go past the status bar
+      if (layout.statusBarPosition === 'bottom' && popupY + popupHeight > statusY) {
         popupY = cursorY - this.scrollY * this.lineHeight - popupHeight;
+      } else if (layout.statusBarPosition === 'top' && popupY < 30) {
+        popupY = cursorY + this.lineHeight - this.scrollY * this.lineHeight + 30;
       }
 
       // Draw background panel
       r.beginPath();
       r.roundRect(popupX, popupY, popupWidth, popupHeight, 4);
       r.closePath();
-      r.fill('#1e293b'); // slate-800
-      r.stroke('#475569', 1.2); // slate-600 border
+      r.fill(theme.statusBarBg);
+      r.stroke(theme.accent + '88', 1.2);
 
       // Draw menu items
       r.save();
@@ -342,10 +359,10 @@ export class VemEditorEntity extends UIComponent {
           r.lineTo(popupX + popupWidth - 2, itemY + 18);
           r.lineTo(popupX + 2, itemY + 18);
           r.closePath();
-          r.fill('#334155'); // slate-700
+          r.fill(theme.accent + '44');
         }
 
-        const labelColor = i === this.selectedAutocompleteIndex ? '#38bdf8' : '#f8fafc'; // sky-400 or slate-50
+        const labelColor = i === this.selectedAutocompleteIndex ? theme.accent : theme.fg;
         r.fillText(item.label, popupX + 8, itemY + 13, '12px monospace', labelColor);
         if (item.detail) {
           r.fillText(
@@ -353,7 +370,7 @@ export class VemEditorEntity extends UIComponent {
             popupX + 8 + item.label.length * 7.5,
             itemY + 13,
             '10px monospace',
-            '#64748b',
+            theme.gutterFg,
           );
         }
       }

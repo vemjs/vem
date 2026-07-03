@@ -32,7 +32,43 @@ export interface VisualSelection {
   active: Position;
 }
 
+export interface VemTheme {
+  bg: string;
+  fg: string;
+  sidebarBg: string;
+  gutterBg: string;
+  gutterFg: string;
+  statusBarBg: string;
+  statusBarFg: string;
+  accent: string;
+}
+
+export interface VemLayoutConfig {
+  sidebarPosition: 'left' | 'right' | 'hidden';
+  statusBarPosition: 'bottom' | 'top';
+  sidebarWidth: number;
+}
+
+export const DEFAULT_THEME: VemTheme = {
+  bg: '#0f172a',
+  fg: '#e2e8f0',
+  sidebarBg: '#090d16',
+  gutterBg: '#0b0f19',
+  gutterFg: '#64748b',
+  statusBarBg: '#1e293b',
+  statusBarFg: '#e2e8f0',
+  accent: '#8b5cf6',
+};
+
+export const DEFAULT_LAYOUT_CONFIG: VemLayoutConfig = {
+  sidebarPosition: 'left',
+  statusBarPosition: 'bottom',
+  sidebarWidth: 240,
+};
+
 export class VemEditorState {
+  public theme: VemTheme = { ...DEFAULT_THEME };
+  public layoutConfig: VemLayoutConfig = { ...DEFAULT_LAYOUT_CONFIG };
   private mode: EditorMode = 'NORMAL';
   private cursor: Position = { line: 0, character: 0 };
   private desiredCol: number = 0;
@@ -139,10 +175,16 @@ export class VemEditorState {
     for (const cb of this.publishDiagnosticsCallbacks) {
       cb(this.diagnostics);
     }
-    // Trigger a render-change so renderers can repaint highlight overlays
-    for (const cb of this.changeCallbacks) {
-      cb();
-    }
+  }
+
+  public setTheme(theme: Partial<VemTheme>): void {
+    this.theme = { ...this.theme, ...theme };
+    this.triggerChange();
+  }
+
+  public setLayoutConfig(config: Partial<VemLayoutConfig>): void {
+    this.layoutConfig = { ...this.layoutConfig, ...config };
+    this.triggerChange();
   }
 
   public getDiagnostics(): Diagnostic[] {

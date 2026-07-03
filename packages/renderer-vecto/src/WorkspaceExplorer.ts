@@ -106,8 +106,67 @@ export class WorkspaceExplorer extends UIComponent {
     }
   }
 
+  public getActiveEditorState(): any | null {
+    return this.workspace.getActiveLayout()?.getActiveState() || null;
+  }
+
+  private lastSidebarPosition: 'left' | 'right' | 'hidden' = 'left';
+  private lastSidebarWidth = 240;
+
+  public syncLayout(activeState: any): void {
+    const layout = activeState.layoutConfig;
+
+    this.remove(this.panelGroup);
+
+    this.panelGroup = new PanelGroup({
+      direction: 'horizontal',
+      width: this.width,
+      height: this.height,
+    });
+
+    this.leftPanel = new Panel({
+      minSize: 150,
+      defaultSize: layout.sidebarWidth / Math.max(1, this.width),
+    });
+    this.rightPanel = new Panel({ minSize: 300 });
+
+    if (layout.sidebarPosition === 'left') {
+      this.leftPanel.add(this.openBtn);
+      if (this.treeView) this.leftPanel.add(this.treeView);
+      this.rightPanel.add(this.workspace);
+
+      this.panelGroup.addPanel(this.leftPanel);
+      this.panelGroup.addPanel(this.rightPanel);
+    } else if (layout.sidebarPosition === 'right') {
+      this.leftPanel.add(this.openBtn);
+      if (this.treeView) this.leftPanel.add(this.treeView);
+      this.rightPanel.add(this.workspace);
+
+      this.panelGroup.addPanel(this.rightPanel);
+      this.panelGroup.addPanel(this.leftPanel);
+    } else {
+      this.rightPanel.add(this.workspace);
+      this.panelGroup.addPanel(this.rightPanel);
+    }
+
+    this.add(this.panelGroup);
+  }
+
   public update(dt: number, time: number): void {
     super.update(dt, time);
+
+    const activeState = this.getActiveEditorState();
+    if (activeState) {
+      const layout = activeState.layoutConfig;
+      if (
+        layout.sidebarPosition !== this.lastSidebarPosition ||
+        layout.sidebarWidth !== this.lastSidebarWidth
+      ) {
+        this.lastSidebarPosition = layout.sidebarPosition;
+        this.lastSidebarWidth = layout.sidebarWidth;
+        this.syncLayout(activeState);
+      }
+    }
 
     if (this.panelGroup.width !== this.width || this.panelGroup.height !== this.height) {
       this.panelGroup.width = this.width;
@@ -131,13 +190,34 @@ export class WorkspaceExplorer extends UIComponent {
     }
   }
 
-  public render(_r: IRenderer): void {
-    _r.beginPath();
-    _r.moveTo(0, 0);
-    _r.lineTo(this.leftPanel.width, 0);
-    _r.lineTo(this.leftPanel.width, this.height);
-    _r.lineTo(0, this.height);
-    _r.closePath();
-    _r.fill('#090d16'); // deep slate sidebar background
+  public render(r: IRenderer): void {
+    const activeState = this.getActiveEditorState();
+    if (!activeState) return;
+
+    const theme = activeState.theme;
+    const layout = activeState.layoutConfig;
+
+    // Apply button styling
+    this.openBtn.bg = theme.statusBarBg;
+    this.openBtn.hoverBg = theme.statusBarBg;
+    this.openBtn.color = theme.fg;
+
+    if (this.treeView) {
+      /* eslint-disable-next-line no-underscore-dangle */
+      (this.treeView as any)._color = theme.fg;
+      /* eslint-disable-next-line no-underscore-dangle */
+      (this.treeView as any)._selColor = theme.accent + '33';
+    }
+
+    if (layout.sidebarPosition !== 'hidden') {
+      const startX = layout.sidebarPosition === 'left' ? 0 : this.width - this.leftPanel.width;
+      r.beginPath();
+      r.moveTo(startX, 0);
+      r.lineTo(startX + this.leftPanel.width, 0);
+      r.lineTo(startX + this.leftPanel.width, this.height);
+      r.lineTo(startX, this.height);
+      r.closePath();
+      r.fill(theme.sidebarBg);
+    }
   }
 }

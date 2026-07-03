@@ -28,5 +28,7 @@ export type {
   VisualSelection,
   Diagnostic,
   DiagnosticSeverity,
+  VemTheme,
+  VemLayoutConfig,
 } from './editor';
 export { ConfigLoader, type VemConfig } from './ConfigLoader';

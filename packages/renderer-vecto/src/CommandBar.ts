@@ -58,12 +58,19 @@ export class CommandBar extends UIComponent {
   }
 
   public render(r: IRenderer): void {
+    const theme = this.editorState.theme;
+
+    // Sync theme colors dynamically
+    this.prefixText.color = theme.accent;
+    this.input.color = theme.statusBarFg;
+    this.input.bg = theme.statusBarBg;
+
     r.beginPath();
     r.moveTo(0, 0);
     r.lineTo(this.width, 0);
     r.lineTo(this.width, this.height);
     r.lineTo(0, this.height);
     r.closePath();
-    r.fill('#1e293b'); // slate-800
+    r.fill(theme.statusBarBg);
   }
 }

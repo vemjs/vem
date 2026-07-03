@@ -7,6 +7,8 @@ export interface VemConfig {
     keys: string;
     command: string;
   }>;
+  theme?: any;
+  layout?: any;
 }
 
 export class ConfigLoader {
@@ -17,6 +19,14 @@ export class ConfigLoader {
   }
 
   public async loadConfigFromObject(config: VemConfig, registry: any): Promise<void> {
+    if (config.theme) {
+      this.editorState.setTheme(config.theme);
+    }
+
+    if (config.layout) {
+      this.editorState.setLayoutConfig(config.layout);
+    }
+
     if (config.keybindings) {
       for (const kb of config.keybindings) {
         this.editorState.registerKeybinding(kb.mode, kb.keys, kb.command);
