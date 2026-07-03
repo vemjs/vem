@@ -15,6 +15,7 @@ export interface PluginContext {
   onDidOpenBuffer(cb: () => void): void;
   onDidChangeBuffer(cb: () => void): void;
   onDidChangeMode(cb: (mode: EditorMode) => void): void;
+  onSave(cb: () => void): void;
 }
 
 export class PluginRegistry {
@@ -24,6 +25,7 @@ export class PluginRegistry {
 
   constructor(editorState: VemEditorState) {
     this.editorState = editorState;
+    this.editorState.onExecutePluginCommand((name) => this.executeCommand(name));
   }
 
   public register(plugin: VemPlugin): void {
@@ -36,6 +38,7 @@ export class PluginRegistry {
       onDidOpenBuffer: (cb) => this.editorState.onDidOpenBuffer(cb),
       onDidChangeBuffer: (cb) => this.editorState.onDidChangeBuffer(cb),
       onDidChangeMode: (cb) => this.editorState.onDidChangeMode(cb),
+      onSave: (cb) => this.editorState.onSave(cb),
     };
 
     plugin.activate(context);

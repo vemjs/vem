@@ -369,9 +369,9 @@ export class VemEditorState {
     const line = this.buffer.getLine(this.cursor.line);
     const before = line.substring(0, this.cursor.character);
     const after = line.substring(this.cursor.character);
-    this.buffer.setLine(this.cursor.line, before + char + after);
     this.cursor.character++;
     this.desiredCol = this.cursor.character;
+    this.buffer.setLine(this.cursor.line, before + char + after);
   }
 
   private handleBackspaceInInsert(): void {
@@ -383,17 +383,18 @@ export class VemEditorState {
       const line = this.buffer.getLine(this.cursor.line);
       const before = line.substring(0, this.cursor.character - 1);
       const after = line.substring(this.cursor.character);
-      this.buffer.setLine(this.cursor.line, before + after);
       this.cursor.character--;
       this.desiredCol = this.cursor.character;
+      this.buffer.setLine(this.cursor.line, before + after);
     } else if (this.cursor.line > 0) {
       const prevLine = this.buffer.getLine(this.cursor.line - 1);
       const currLine = this.buffer.getLine(this.cursor.line);
-      this.buffer.setLine(this.cursor.line - 1, prevLine + currLine);
-      this.buffer.deleteLines(this.cursor.line, this.cursor.line);
+      const lineToDelete = this.cursor.line;
       this.cursor.line--;
       this.cursor.character = prevLine.length;
       this.desiredCol = this.cursor.character;
+      this.buffer.setLine(this.cursor.line, prevLine + currLine);
+      this.buffer.deleteLines(lineToDelete, lineToDelete);
     }
   }
 
@@ -405,12 +406,12 @@ export class VemEditorState {
     const line = this.buffer.getLine(this.cursor.line);
     const before = line.substring(0, this.cursor.character);
     const after = line.substring(this.cursor.character);
-
-    this.buffer.setLine(this.cursor.line, before);
-    this.buffer.insertLine(this.cursor.line + 1, after);
+    const oldLine = this.cursor.line;
     this.cursor.line++;
     this.cursor.character = 0;
     this.desiredCol = 0;
+    this.buffer.setLine(oldLine, before);
+    this.buffer.insertLine(oldLine + 1, after);
   }
 
   // --- Command Execution ---

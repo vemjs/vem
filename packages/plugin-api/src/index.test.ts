@@ -99,4 +99,29 @@ describe('Plugin System', () => {
     editor.handleKey('Escape');
     expect(lastMode).toBe('NORMAL');
   });
+
+  it('should support save event listeners', () => {
+    const editor = new VemEditorState('line1');
+    const registry = new PluginRegistry(editor);
+
+    let saved = false;
+    const testPlugin: VemPlugin = {
+      name: 'save-listener',
+      version: '1.0.0',
+      activate(context) {
+        context.onSave(() => {
+          saved = true;
+        });
+      },
+    };
+
+    registry.register(testPlugin);
+
+    // Trigger save (simulate :w)
+    editor.handleKey(':');
+    editor.handleKey('w');
+    editor.handleKey('Enter');
+
+    expect(saved).toBe(true);
+  });
 });
