@@ -10,7 +10,7 @@ export class VemEditorEntity extends UIComponent {
   private commandBar: CommandBar;
 
   private charWidth = 8.4;
-  private lineHeight = 22; // Extended row height for a premium readable spacing
+  private lineHeight = 21; // Extended row height for a premium readable spacing
   private scrollY = 0; // scroll offset in lines
   private autocompleteItems: { label: string; detail?: string }[] = [];
   private selectedAutocompleteIndex = 0;
@@ -38,7 +38,6 @@ export class VemEditorEntity extends UIComponent {
     this.bodyText = new RichText([], {
       font: premiumFont,
       color: '#e2e8f0', // slate-200
-      lineHeight: this.lineHeight, // Uniform line-height aligned with gutter numbers
     });
 
     this.commandBar = new CommandBar(editorState, this.width);
@@ -102,7 +101,7 @@ export class VemEditorEntity extends UIComponent {
         }
 
         this.updateFromState();
-        this.markDirty();
+        this.scene?.markDirty();
         return;
       }
 
@@ -136,12 +135,12 @@ export class VemEditorEntity extends UIComponent {
 
     this.on('focus', () => {
       this.isFocused = true;
-      this.markDirty();
+      this.scene?.markDirty();
     });
 
     this.on('blur', () => {
       this.isFocused = false;
-      this.markDirty();
+      this.scene?.markDirty();
     });
 
     this.updateFromState();
