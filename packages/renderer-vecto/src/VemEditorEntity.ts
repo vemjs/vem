@@ -10,10 +10,11 @@ export class VemEditorEntity extends UIComponent {
   private commandBar: CommandBar;
 
   private charWidth = 8.4;
-  private lineHeight = 20;
+  private lineHeight = 22; // Extended row height for a premium readable spacing
   private scrollY = 0; // scroll offset in lines
   private autocompleteItems: { label: string; detail?: string }[] = [];
   private selectedAutocompleteIndex = 0;
+  private isFocused = false;
 
   constructor(editorState: VemEditorState) {
     super();
@@ -21,17 +22,23 @@ export class VemEditorEntity extends UIComponent {
     this.width = 800;
     this.height = 600;
     this.clipChildren = true;
+    this.interactive = true; // Expose as interactive for A11y focus projection
+
+    // Monospace fonts stack supporting premium programming ligatures
+    const premiumFont =
+      '14px "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, Monaco, monospace';
 
     this.gutterText = new Text('', {
-      font: '14px monospace',
+      font: premiumFont,
       color: '#64748b', // slate-500
       lineHeight: this.lineHeight,
     });
 
     // Editor body text
     this.bodyText = new RichText([], {
-      font: '14px monospace',
+      font: premiumFont,
       color: '#e2e8f0', // slate-200
+      lineHeight: this.lineHeight, // Uniform line-height aligned with gutter numbers
     });
 
     this.commandBar = new CommandBar(editorState, this.width);
@@ -45,10 +52,97 @@ export class VemEditorEntity extends UIComponent {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.font = '14px monospace';
+        ctx.font = '14px "JetBrains Mono", "Fira Code", monospace';
         this.charWidth = ctx.measureText('A').width;
       }
     }
+
+    // Register accessibility input handlers
+    this.on('keydown', (e: any) => {
+      const keyboardEvent = e.nativeEvent as KeyboardEvent;
+      if (!keyboardEvent) return;
+
+      const key = keyboardEvent.key;
+      const vimModeEnabled = (this.editorState as any).vimModeEnabled ?? false;
+
+      // Handle Arrow key navigation manually in default (non-Vim) mode to avoid Vem core blocking
+      if (!vimModeEnabled && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
+        keyboardEvent.preventDefault();
+        const cursor = this.editorState.getCursor();
+        const buffer = this.editorState.getBuffer();
+        const lineCount = buffer.getLineCount();
+
+        if (key === 'ArrowLeft') {
+          if (cursor.character > 0) {
+            cursor.character--;
+          } else if (cursor.line > 0) {
+            cursor.line--;
+            cursor.character = buffer.getLine(cursor.line).length;
+          }
+        } else if (key === 'ArrowRight') {
+          const currentLineText = buffer.getLine(cursor.line);
+          if (cursor.character < currentLineText.length) {
+            cursor.character++;
+          } else if (cursor.line < lineCount - 1) {
+            cursor.line++;
+            cursor.character = 0;
+          }
+        } else if (key === 'ArrowUp') {
+          if (cursor.line > 0) {
+            cursor.line--;
+            const prevLineLen = buffer.getLine(cursor.line).length;
+            cursor.character = Math.min(cursor.character, prevLineLen);
+          }
+        } else if (key === 'ArrowDown') {
+          if (cursor.line < lineCount - 1) {
+            cursor.line++;
+            const nextLineLen = buffer.getLine(cursor.line).length;
+            cursor.character = Math.min(cursor.character, nextLineLen);
+          }
+        }
+
+        this.updateFromState();
+        this.markDirty();
+        return;
+      }
+
+      if (key === 'Escape' && !vimModeEnabled) {
+        keyboardEvent.preventDefault();
+        return;
+      }
+
+      let feedKey = key;
+      if (keyboardEvent.ctrlKey) {
+        if (key === 'r') feedKey = '<C-r>';
+        else if (key === 'v') feedKey = '<C-v>';
+      }
+
+      const keysToPrevent = [
+        'ArrowUp',
+        'ArrowDown',
+        'ArrowLeft',
+        'ArrowRight',
+        'Tab',
+        'Backspace',
+        ' ',
+      ];
+      if (keysToPrevent.includes(key) || (keyboardEvent.ctrlKey && (key === 'r' || key === 'v'))) {
+        keyboardEvent.preventDefault();
+      }
+
+      this.editorState.handleKey(feedKey);
+      this.updateFromState();
+    });
+
+    this.on('focus', () => {
+      this.isFocused = true;
+      this.markDirty();
+    });
+
+    this.on('blur', () => {
+      this.isFocused = false;
+      this.markDirty();
+    });
 
     this.updateFromState();
   }
@@ -297,21 +391,31 @@ export class VemEditorEntity extends UIComponent {
     const cursorY = 5 + cursor.line * this.lineHeight;
     const mode = this.editorState.getMode();
 
-    r.beginPath();
-    if (mode === 'INSERT') {
-      r.moveTo(cursorX, cursorY);
-      r.lineTo(cursorX + 2, cursorY);
-      r.lineTo(cursorX + 2, cursorY + this.lineHeight);
-      r.lineTo(cursorX, cursorY + this.lineHeight);
-      r.closePath();
-      r.fill(theme.accent);
+    if (this.isFocused) {
+      r.beginPath();
+      if (mode === 'INSERT') {
+        r.moveTo(cursorX, cursorY);
+        r.lineTo(cursorX + 2, cursorY);
+        r.lineTo(cursorX + 2, cursorY + this.lineHeight);
+        r.lineTo(cursorX, cursorY + this.lineHeight);
+        r.closePath();
+        r.fill(theme.accent);
+      } else {
+        r.moveTo(cursorX, cursorY);
+        r.lineTo(cursorX + this.charWidth, cursorY);
+        r.lineTo(cursorX + this.charWidth, cursorY + this.lineHeight);
+        r.lineTo(cursorX, cursorY + this.lineHeight);
+        r.closePath();
+        r.fill(theme.accent + '88'); // 50% opacity accent
+      }
     } else {
+      r.beginPath();
       r.moveTo(cursorX, cursorY);
       r.lineTo(cursorX + this.charWidth, cursorY);
       r.lineTo(cursorX + this.charWidth, cursorY + this.lineHeight);
       r.lineTo(cursorX, cursorY + this.lineHeight);
       r.closePath();
-      r.fill(theme.accent + '88'); // 50% opacity accent
+      r.stroke('#475569', 1); // slate-600 border for unfocused pointer
     }
 
     r.restore(); // Restore scroll transform
@@ -587,5 +691,14 @@ export class VemEditorEntity extends UIComponent {
         theme.gutterFg,
       );
     }
+  }
+
+  public getA11yAttributes() {
+    return {
+      tag: 'textarea' as const,
+      role: 'textbox',
+      label: 'Vem Code Editor',
+      value: this.editorState.getText(),
+    };
   }
 }
