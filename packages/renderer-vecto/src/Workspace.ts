@@ -20,9 +20,19 @@ export class VemWorkspace extends UIComponent {
       tabHeight: 30,
       tabs: [{ id: 'tab-1', label: 'Tab 1', content: initialLayout }],
       value: 'tab-1',
+      onChange: () => this.detachInactiveLayouts(),
     });
 
     this.add(this.tabsComponent);
+  }
+
+  private detachInactiveLayouts(): void {
+    const activeLayout = this.getActiveLayout();
+    for (const layout of this.layouts) {
+      if (layout !== activeLayout) {
+        this.scene?.detachA11y(layout);
+      }
+    }
   }
 
   public addTab(initialText?: string): void {
@@ -37,7 +47,7 @@ export class VemWorkspace extends UIComponent {
     }));
 
     this.tabsComponent!.tabs = updatedTabs;
-    this.tabsComponent!.value = `tab-${nextIndex}`;
+    this.tabsComponent!.emit('change', { value: `tab-${nextIndex}` });
   }
 
   public update(dt: number, time: number): void {

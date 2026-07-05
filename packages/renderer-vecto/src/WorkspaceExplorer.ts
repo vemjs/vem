@@ -79,6 +79,14 @@ export class WorkspaceExplorer extends UIComponent {
     return list;
   }
 
+  private addSidebarContent(panel: Panel): void {
+    if (this.treeView) {
+      panel.add(this.treeView);
+    } else {
+      panel.add(this.openBtn);
+    }
+  }
+
   private async handleOpenFolder(): Promise<void> {
     if (typeof window === 'undefined' || !(window as any).showDirectoryPicker) {
       console.warn('File System Access API is not supported in this environment.');
@@ -113,6 +121,7 @@ export class WorkspaceExplorer extends UIComponent {
         },
       });
 
+      this.scene?.detachA11y(this.openBtn);
       this.leftPanel.remove(this.openBtn);
       this.leftPanel.add(this.treeView);
 
@@ -139,6 +148,7 @@ export class WorkspaceExplorer extends UIComponent {
   public syncLayout(activeState: any): void {
     const layout = activeState.layoutConfig;
 
+    this.scene?.detachA11y(this.panelGroup);
     this.remove(this.panelGroup);
 
     this.panelGroup = new PanelGroup({
@@ -154,15 +164,13 @@ export class WorkspaceExplorer extends UIComponent {
     this.rightPanel = new Panel({ minSize: 300 });
 
     if (layout.sidebarPosition === 'left') {
-      this.leftPanel.add(this.openBtn);
-      if (this.treeView) this.leftPanel.add(this.treeView);
+      this.addSidebarContent(this.leftPanel);
       this.rightPanel.add(this.workspace);
 
       this.panelGroup.addPanel(this.leftPanel);
       this.panelGroup.addPanel(this.rightPanel);
     } else if (layout.sidebarPosition === 'right') {
-      this.leftPanel.add(this.openBtn);
-      if (this.treeView) this.leftPanel.add(this.treeView);
+      this.addSidebarContent(this.leftPanel);
       this.rightPanel.add(this.workspace);
 
       this.panelGroup.addPanel(this.rightPanel);

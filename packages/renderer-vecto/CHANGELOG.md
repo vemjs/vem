@@ -1,5 +1,16 @@
 # @vemjs/renderer-vecto
 
+## 0.1.4
+
+### Patch Changes
+
+- Pin VectoJS runtime packages to `@vectojs/core@0.2.2` and `@vectojs/ui@0.2.2`.
+- Fix VectoUI entity lifecycle cleanup for command bars, workspaces, layouts, and explorer panes.
+- Synchronize command-line text through editor state and route textarea keys through Vim mode by default.
+- Limit published package contents to built `dist` files.
+- Updated dependencies
+  - @vemjs/core@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes

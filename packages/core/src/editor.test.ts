@@ -146,6 +146,20 @@ describe('VemEditorState', () => {
       expect(editor.getCommandText()).toBe('');
     });
 
+    it('should expose a command text setter for renderer-backed inputs', () => {
+      const editor = new VemEditorState('test');
+      let changes = 0;
+      editor.onChange(() => {
+        changes++;
+      });
+
+      editor.handleKey(':');
+      editor.setCommandText('vsp');
+
+      expect(editor.getCommandText()).toBe('vsp');
+      expect(changes).toBe(3);
+    });
+
     it('should trigger events on Enter', () => {
       const editor = new VemEditorState('test');
 

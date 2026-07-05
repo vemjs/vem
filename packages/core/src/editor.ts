@@ -396,6 +396,17 @@ export class VemEditorState {
     return { ...this.cursor };
   }
 
+  public setCursor(line: number, character: number): void {
+    const lineCount = this.buffer.getLineCount();
+    const targetLine = Math.max(0, Math.min(lineCount - 1, line));
+    const lineText = this.buffer.getLine(targetLine);
+    const targetChar = Math.max(0, Math.min(lineText.length, character));
+
+    this.cursor = { line: targetLine, character: targetChar };
+    this.desiredCol = targetChar;
+    this.triggerChange();
+  }
+
   public getBuffer(): VimBuffer {
     return this.buffer;
   }
@@ -414,6 +425,12 @@ export class VemEditorState {
 
   public getCommandText(): string {
     return this.commandText;
+  }
+
+  public setCommandText(text: string): void {
+    if (this.commandText === text) return;
+    this.commandText = text;
+    this.triggerChange();
   }
 
   // --- Key Input Entry Point ---

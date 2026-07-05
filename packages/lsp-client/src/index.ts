@@ -103,7 +103,7 @@ export class LSPClient {
     // LSP initialize handshake
     await this.rpc.sendRequest('initialize', {
       processId: null,
-      clientInfo: { name: 'vem', version: '0.1.0' },
+      clientInfo: { name: 'vem', version: '0.1.4' },
       rootUri: null,
       capabilities: {
         textDocument: {

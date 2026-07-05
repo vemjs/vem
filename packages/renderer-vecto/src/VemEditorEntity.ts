@@ -62,7 +62,7 @@ export class VemEditorEntity extends UIComponent {
       if (!keyboardEvent) return;
 
       const key = keyboardEvent.key;
-      const vimModeEnabled = (this.editorState as any).vimModeEnabled ?? false;
+      const vimModeEnabled = (this.editorState as any).vimModeEnabled ?? true;
 
       // Handle Arrow key navigation manually in default (non-Vim) mode to avoid Vem core blocking
       if (!vimModeEnabled && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
@@ -71,42 +71,41 @@ export class VemEditorEntity extends UIComponent {
         const buffer = this.editorState.getBuffer();
         const lineCount = buffer.getLineCount();
 
+        let targetLine = cursor.line;
+        let targetChar = cursor.character;
+
         if (key === 'ArrowLeft') {
-          if (cursor.character > 0) {
-            cursor.character--;
-          } else if (cursor.line > 0) {
-            cursor.line--;
-            cursor.character = buffer.getLine(cursor.line).length;
+          if (targetChar > 0) {
+            targetChar--;
+          } else if (targetLine > 0) {
+            targetLine--;
+            targetChar = buffer.getLine(targetLine).length;
           }
         } else if (key === 'ArrowRight') {
-          const currentLineText = buffer.getLine(cursor.line);
-          if (cursor.character < currentLineText.length) {
-            cursor.character++;
-          } else if (cursor.line < lineCount - 1) {
-            cursor.line++;
-            cursor.character = 0;
+          const currentLineText = buffer.getLine(targetLine);
+          if (targetChar < currentLineText.length) {
+            targetChar++;
+          } else if (targetLine < lineCount - 1) {
+            targetLine++;
+            targetChar = 0;
           }
         } else if (key === 'ArrowUp') {
-          if (cursor.line > 0) {
-            cursor.line--;
-            const prevLineLen = buffer.getLine(cursor.line).length;
-            cursor.character = Math.min(cursor.character, prevLineLen);
+          if (targetLine > 0) {
+            targetLine--;
+            const prevLineLen = buffer.getLine(targetLine).length;
+            targetChar = Math.min(targetChar, prevLineLen);
           }
         } else if (key === 'ArrowDown') {
-          if (cursor.line < lineCount - 1) {
-            cursor.line++;
-            const nextLineLen = buffer.getLine(cursor.line).length;
-            cursor.character = Math.min(cursor.character, nextLineLen);
+          if (targetLine < lineCount - 1) {
+            targetLine++;
+            const nextLineLen = buffer.getLine(targetLine).length;
+            targetChar = Math.min(targetChar, nextLineLen);
           }
         }
 
+        this.editorState.setCursor(targetLine, targetChar);
         this.updateFromState();
         this.scene?.markDirty();
-        return;
-      }
-
-      if (key === 'Escape' && !vimModeEnabled) {
-        keyboardEvent.preventDefault();
         return;
       }
 
@@ -123,6 +122,7 @@ export class VemEditorEntity extends UIComponent {
         'ArrowRight',
         'Tab',
         'Backspace',
+        'Escape',
         ' ',
       ];
       if (keysToPrevent.includes(key) || (keyboardEvent.ctrlKey && (key === 'r' || key === 'v'))) {
@@ -142,6 +142,43 @@ export class VemEditorEntity extends UIComponent {
       this.isFocused = false;
       this.scene?.markDirty();
     });
+
+    const handlePointerClick = (e: any) => {
+      const inputEl = this.scene?.getA11yElement(this.id);
+      if (inputEl) {
+        inputEl.focus();
+      }
+
+      const native = e.nativeEvent as PointerEvent;
+      if (!native) return;
+
+      const rect = native.target ? (native.target as HTMLElement).getBoundingClientRect() : null;
+      const localX =
+        native.offsetX !== undefined ? native.offsetX : rect ? native.clientX - rect.left : 0;
+      const localY =
+        native.offsetY !== undefined ? native.offsetY : rect ? native.clientY - rect.top : 0;
+
+      const layout = this.editorState.layoutConfig;
+      const contentOffsetY = layout.statusBarPosition === 'top' ? 30 : 0;
+
+      const lineCount = this.editorState.getBuffer().getLineCount();
+      const maxLineDigits = Math.max(2, lineCount.toString().length);
+      const gutterWidth = maxLineDigits * this.charWidth + 15;
+
+      const relativeY = localY - contentOffsetY + this.scrollY * this.lineHeight - 5;
+      const clickedLine = Math.floor(relativeY / this.lineHeight);
+
+      const relativeX = localX - gutterWidth - 5;
+      const clickedChar = Math.round(relativeX / this.charWidth);
+
+      this.editorState.setCursor(clickedLine, clickedChar);
+      (window as any).lastPointerCoords = { localX, localY, clickedLine, clickedChar, id: this.id };
+      this.updateFromState();
+      this.scene?.markDirty();
+    };
+
+    this.on('pointerdown', handlePointerClick);
+    this.on('click', handlePointerClick);
 
     this.updateFromState();
   }
@@ -199,13 +236,15 @@ export class VemEditorEntity extends UIComponent {
 
     // 6. Position and layout based on statusBarPosition
     const hasCommandBar = this.editorState.getMode() === 'COMMAND';
+    this.commandBar.updateWidth(this.width);
     if (hasCommandBar) {
       if (!this.children.includes(this.commandBar)) {
         this.add(this.commandBar);
       }
-      this.commandBar.clear();
+      this.commandBar.syncFromState();
     } else {
       if (this.children.includes(this.commandBar)) {
+        this.scene?.detachA11y(this.commandBar);
         this.remove(this.commandBar);
       }
     }

@@ -1,5 +1,13 @@
 # @vemjs/plugin-api
 
+## 0.1.4
+
+### Patch Changes
+
+- Limit published package contents to built `dist` files.
+- Updated dependencies
+  - @vemjs/core@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes

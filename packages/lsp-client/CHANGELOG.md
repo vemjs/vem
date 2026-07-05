@@ -1,5 +1,14 @@
 # @vemjs/lsp-client
 
+## 0.1.4
+
+### Patch Changes
+
+- Update LSP `clientInfo.version` to match the package release.
+- Limit published package contents to built `dist` files.
+- Updated dependencies
+  - @vemjs/core@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes

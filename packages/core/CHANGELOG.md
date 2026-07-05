@@ -1,5 +1,12 @@
 # @vemjs/core
 
+## 0.1.4
+
+### Patch Changes
+
+- Add `setCommandText()` so renderers can synchronize command-line input through the core editor state.
+- Limit published package contents to built `dist` files.
+
 ## 0.1.3
 
 ### Patch Changes

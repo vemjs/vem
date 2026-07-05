@@ -27,8 +27,7 @@ export class CommandBar extends UIComponent {
       bg: '#1e293b', // slate-800
       border: 'transparent',
       onChange: (value) => {
-        // Mirror changes to editorState command buffer
-        (this.editorState as any).commandText = value;
+        this.editorState.setCommandText(value);
       },
     });
     this.input.id = 'vem-command-input';
@@ -53,8 +52,8 @@ export class CommandBar extends UIComponent {
     this.input.width = width - 20;
   }
 
-  public clear(): void {
-    this.input.value = '';
+  public syncFromState(): void {
+    this.input.value = this.editorState.getCommandText();
   }
 
   public render(r: IRenderer): void {

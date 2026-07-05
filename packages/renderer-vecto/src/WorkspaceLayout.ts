@@ -153,6 +153,7 @@ export class WorkspaceLayout extends UIComponent {
 
   public rebuildLayout(): void {
     if (this.layoutRoot) {
+      this.scene?.detachA11y(this.layoutRoot);
       this.remove(this.layoutRoot);
     }
 
