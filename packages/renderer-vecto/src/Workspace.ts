@@ -56,6 +56,13 @@ export class VemWorkspace extends UIComponent {
       this.tabsComponent.width = this.width;
       this.tabsComponent.height = this.height;
     }
+    // Tabs does not size its content entities; without this sync every layout
+    // keeps its construction width and escapes the surrounding Panel clip
+    // whenever PanelGroup reserves divider space (observed as a 3.2px bleed).
+    for (const layout of this.layouts) {
+      layout.width = this.width;
+      layout.height = this.height - 30;
+    }
   }
 
   public getActiveLayout(): WorkspaceLayout | null {

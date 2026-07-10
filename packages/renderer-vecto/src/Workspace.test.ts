@@ -37,6 +37,25 @@ describe('VemWorkspace', () => {
     expect(tabs.children).not.toContain(firstLayout);
     expect(detached).toEqual([firstLayout]);
   });
+
+  it('should resize every layout on update so panes track the hosting panel width', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    workspace.addTab('two');
+
+    // Simulate the hosting Panel handing down a narrower size (e.g. after
+    // PanelGroup reserves divider space) — previously layouts kept their
+    // construction width and escaped the panel's clip bounds.
+    workspace.width = 788.8;
+    workspace.height = 500;
+    workspace.update(16, 0);
+
+    const layouts = (workspace as unknown as { layouts: WorkspaceLayout[] }).layouts;
+    expect(layouts.length).toBe(2);
+    for (const layout of layouts) {
+      expect(layout.width).toBe(788.8);
+      expect(layout.height).toBe(470);
+    }
+  });
 });
 
 describe('WorkspaceLayout', () => {
