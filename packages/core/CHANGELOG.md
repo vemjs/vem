@@ -1,5 +1,11 @@
 # @vemjs/core
 
+## 0.1.7
+
+### Patch Changes
+
+- 5cebaa1: Add `VemEditorState.registerGlobalExCommand(name, handler)` — editor-global ex commands (Vim semantics) that every state sees, including pane/tab states created later; handlers receive the argument text and the invoking state.
+
 ## 0.1.6
 
 ### Patch Changes
