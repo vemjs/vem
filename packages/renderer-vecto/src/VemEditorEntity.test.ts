@@ -180,7 +180,7 @@ describe('VemEditorEntity grid rendering', () => {
 
   it('advances highlighted spans by their character count, including whitespace-only spans', () => {
     const state = new VemEditorState('ab  cd');
-    state.highlightLine = (line: string) => [
+    state.highlightLine = (_line: string) => [
       { text: 'ab', color: '#ff0000' },
       { text: '  ' },
       { text: 'cd', color: '#00ff00' },
