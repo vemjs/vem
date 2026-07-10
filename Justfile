@@ -1,27 +1,27 @@
 default:
     @just --list
 
-edit:
-    @echo "=== Starting Zola Dev Server & Bun Watcher ==="
-    @bun run dev
-
 status:
     @echo "=== Checking repository status ==="
     @git status
 
 test:
     @echo "=== Running quality gates ==="
-    @if command -v pre-commit &>/dev/null; then pre-commit run --all-files; else echo "pre-commit not found"; fi
+    @bun test
+    @bun run lint
+    @bun run knip
 
-deploy: test
-    @echo "=== Building Astro site ==="
+build:
+    @echo "=== Building @vemjs/* packages ==="
     @bun run build
-    @echo "=== Deploying to Cloudflare Pages ==="
-    @./scripts/deploy-pages.sh dist vecto-ui main
+
+# Publishing is CI-driven: `changeset version`, commit, push to main —
+# the Release workflow publishes via the changesets action.
+# The website deploys separately: `just deploy` in ../vem-website.
 
 commit message="":
     @if [ -z "{{message}}" ]; then \
-        echo "Error: Commit message required. Usage: just commit \"feat(website): update layout\""; \
+        echo "Error: Commit message required. Usage: just commit \"fix(core): ...\""; \
         exit 1; \
     fi
     @git add -A
