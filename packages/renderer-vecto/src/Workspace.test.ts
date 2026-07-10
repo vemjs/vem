@@ -61,4 +61,89 @@ describe('WorkspaceLayout', () => {
     expect(layout.children).not.toContain(oldRoot);
     expect(layout.children.length).toBe(1);
   });
+
+  it('should keep the surviving pane responsive to input after closing a split', () => {
+    const layout = new WorkspaceLayout(800, 600, 'one');
+    Object.defineProperty(layout, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+
+    const originalState = layout.getActiveState();
+    expect(originalState).not.toBeNull();
+
+    layout.splitPane('pane-1', 'vertical');
+    const newState = layout.getActiveState();
+    expect(newState).not.toBeNull();
+    expect(newState).not.toBe(originalState);
+
+    // Simulate ':q' on the newly created pane, closing it.
+    newState!.setMode('COMMAND');
+    newState!.setCommandText('q');
+    newState!.handleKey('Enter');
+
+    expect(layout.getActiveState()).toBe(originalState);
+  });
+
+  it('should lay out :vsp panes side-by-side (vim vertical split)', () => {
+    const layout = new WorkspaceLayout(800, 600, 'one');
+    Object.defineProperty(layout, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+
+    layout.splitPane('pane-1', 'vertical');
+
+    const group = layout.children[0] as unknown as { direction: 'horizontal' | 'vertical' };
+    expect(group.direction).toBe('horizontal');
+  });
+
+  it('should lay out :sp panes stacked top-to-bottom (vim horizontal split)', () => {
+    const layout = new WorkspaceLayout(800, 600, 'one');
+    Object.defineProperty(layout, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+
+    layout.splitPane('pane-1', 'horizontal');
+
+    const group = layout.children[0] as unknown as { direction: 'horizontal' | 'vertical' };
+    expect(group.direction).toBe('vertical');
+  });
+
+  it('should re-render the active pane after an externally driven state mutation', () => {
+    const layout = new WorkspaceLayout(800, 600, 'one');
+    let dirty = false;
+    Object.defineProperty(layout, 'scene', {
+      configurable: true,
+      value: {
+        a11yNeedsReorder: false,
+        markDirty() {
+          dirty = true;
+        },
+        detachA11y() {},
+      },
+    });
+
+    const state = layout.getActiveState()!;
+    let updateFromStateCalls = 0;
+    const pane = layout.children[0] as unknown as {
+      editorEntity: { updateFromState: () => void };
+    };
+    const originalUpdateFromState = pane.editorEntity.updateFromState.bind(pane.editorEntity);
+    pane.editorEntity.updateFromState = () => {
+      updateFromStateCalls++;
+      originalUpdateFromState();
+    };
+
+    // Simulates the app-level keydown handler (main.ts), which mutates the
+    // active state directly rather than going through the entity's own
+    // 'keydown' listener (which calls updateFromState() itself).
+    state.setMode('INSERT');
+    state.handleKey('x');
+    layout.refreshActivePane();
+
+    expect(updateFromStateCalls).toBeGreaterThan(0);
+    expect(dirty).toBe(true);
+  });
 });

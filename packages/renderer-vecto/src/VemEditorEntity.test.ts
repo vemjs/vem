@@ -116,4 +116,25 @@ describe('VemEditorEntity autocomplete API', () => {
     expect(editorState.getMode()).toBe('COMMAND');
     expect(editorState.getCommandText()).toBe('vsp');
   });
+
+  it('should position the cursor from VectoJS local pointer coordinates', () => {
+    Object.defineProperty(entity, 'scene', {
+      configurable: true,
+      value: {
+        getA11yElement: () => ({ focus() {} }),
+        markDirty() {},
+      },
+    });
+
+    entity.emit('pointerdown', {
+      localX: 70,
+      localY: 12,
+      nativeEvent: {
+        offsetX: 999,
+        offsetY: 999,
+      },
+    });
+
+    expect(editorState.getCursor()).toEqual({ line: 0, character: 4 });
+  });
 });

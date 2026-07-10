@@ -33,6 +33,7 @@ export class WorkspaceLayout extends UIComponent {
   private activePaneId: string;
   private layoutRoot: Entity | null = null;
   private paneMap = new Map<string, PaneNode>();
+  private paneEntityMap = new Map<string, EditorPane>();
 
   constructor(width: number, height: number, initialText?: string) {
     super();
@@ -97,8 +98,13 @@ export class WorkspaceLayout extends UIComponent {
     this.bindStateEvents(newId, newState);
 
     const oldLeafCopy: PaneNode = { ...targetNode };
+    this.paneMap.set(paneId, oldLeafCopy);
 
+    // The wrapper needs an id distinct from paneId: paneId now identifies the
+    // surviving leaf (oldLeafCopy), and reusing it here would leave a parent
+    // and child sharing an id, corrupting findParentNode's tree lookups.
     const splitNode = targetNode as any;
+    splitNode.id = `split-${Date.now()}`;
     splitNode.type = 'split';
     splitNode.direction = direction;
     splitNode.children = [oldLeafCopy, newLeaf];
@@ -157,18 +163,35 @@ export class WorkspaceLayout extends UIComponent {
       this.remove(this.layoutRoot);
     }
 
+    this.paneEntityMap.clear();
     this.layoutRoot = this.buildNode(this.rootNode);
     this.add(this.layoutRoot);
+  }
+
+  // Code paths that mutate a VemEditorState directly (e.g. the app-level
+  // keydown handler, which looks up state via getActiveState() rather than
+  // going through an entity's own event listeners) don't trigger a repaint
+  // on their own: VemEditorEntity only recomputes its rendered spans when
+  // explicitly told to. Call this after any such external mutation.
+  public refreshActivePane(): void {
+    const pane = this.paneEntityMap.get(this.activePaneId);
+    pane?.editorEntity.updateFromState();
+    this.scene?.markDirty();
   }
 
   private buildNode(node: PaneNode): Entity {
     if (node.type === 'leaf') {
       const pane = new EditorPane(node.state);
       pane.id = node.id;
+      this.paneEntityMap.set(node.id, pane);
       return pane;
     } else {
+      // Vim's split naming describes the divider, not the arrangement axis:
+      // `:vsp` (vertical split -> a vertical divider) places panes side-by-side,
+      // which is PanelGroup's 'horizontal' axis; `:sp` stacks panes top-to-bottom,
+      // PanelGroup's 'vertical' axis. Invert to translate one naming into the other.
       const group = new PanelGroup({
-        direction: node.direction,
+        direction: node.direction === 'vertical' ? 'horizontal' : 'vertical',
         width: this.width,
         height: this.height,
       });

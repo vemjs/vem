@@ -12,8 +12,8 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@vectojs/core": "0.2.2",
-    "@vectojs/ui": "0.2.2",
+    "@vectojs/core": "^1.0.1",
+    "@vectojs/ui": "^1.1.2",
     "@vemjs/core": "^0.1.4"
   },
   "publishConfig": {

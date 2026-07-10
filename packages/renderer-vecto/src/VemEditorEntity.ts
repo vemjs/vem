@@ -149,14 +149,9 @@ export class VemEditorEntity extends UIComponent {
         inputEl.focus();
       }
 
-      const native = e.nativeEvent as PointerEvent;
-      if (!native) return;
-
-      const rect = native.target ? (native.target as HTMLElement).getBoundingClientRect() : null;
-      const localX =
-        native.offsetX !== undefined ? native.offsetX : rect ? native.clientX - rect.left : 0;
-      const localY =
-        native.offsetY !== undefined ? native.offsetY : rect ? native.clientY - rect.top : 0;
+      const localX = e.localX;
+      const localY = e.localY;
+      if (localX === undefined || localY === undefined) return;
 
       const layout = this.editorState.layoutConfig;
       const contentOffsetY = layout.statusBarPosition === 'top' ? 30 : 0;
@@ -172,7 +167,15 @@ export class VemEditorEntity extends UIComponent {
       const clickedChar = Math.round(relativeX / this.charWidth);
 
       this.editorState.setCursor(clickedLine, clickedChar);
-      (window as any).lastPointerCoords = { localX, localY, clickedLine, clickedChar, id: this.id };
+      if (typeof window !== 'undefined') {
+        (window as any).lastPointerCoords = {
+          localX,
+          localY,
+          clickedLine,
+          clickedChar,
+          id: this.id,
+        };
+      }
       this.updateFromState();
       this.scene?.markDirty();
     };

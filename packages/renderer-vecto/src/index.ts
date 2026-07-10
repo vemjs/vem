@@ -18,7 +18,9 @@ export class VectoRenderer {
   }
 
   public attach(canvas: HTMLCanvasElement): void {
-    this.scene = new Scene(canvas);
+    this.dispose();
+
+    this.scene = new Scene(canvas, { disableWindowResize: true });
     this.editorEntity = new VemEditorEntity(this.editorState);
     this.scene.add(this.editorEntity);
     this.scene.start();
@@ -44,5 +46,11 @@ export class VectoRenderer {
     if (this.editorEntity) {
       this.editorEntity.updateFromState();
     }
+  }
+
+  public dispose(): void {
+    this.scene?.destroy();
+    this.scene = null;
+    this.editorEntity = null;
   }
 }
