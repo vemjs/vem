@@ -1,5 +1,11 @@
 # @vemjs/core
 
+## 0.1.5
+
+### Patch Changes
+
+- 4203dae: Suppress Vite dynamic import analysis warnings for runtime-loaded Vem configuration modules.
+
 ## 0.1.4
 
 ### Patch Changes
