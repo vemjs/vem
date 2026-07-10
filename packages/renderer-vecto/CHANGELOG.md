@@ -1,5 +1,11 @@
 # @vemjs/renderer-vecto
 
+## 0.1.6
+
+### Patch Changes
+
+- 6e2ae90: Propagate workspace size to every tab layout on update. Tabs does not size its content entities, so layouts kept their construction width and bled past the hosting Panel clip by the divider width (a 3.2px right-edge escape flagged by the @vectojs/devtools scene audit).
+
 ## 0.1.5
 
 ### Patch Changes
