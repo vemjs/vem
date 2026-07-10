@@ -73,12 +73,25 @@ export class WorkspaceLayout extends UIComponent {
     return null;
   }
 
-  public splitPane(paneId: string, direction: 'horizontal' | 'vertical'): void {
+  public getActivePaneId(): string {
+    return this.activePaneId;
+  }
+
+  /** Split the active pane — Vim's `:sp`/`:vsp`, or `:help`-style when `initialText` is given. */
+  public splitActivePane(direction: 'horizontal' | 'vertical', initialText?: string): void {
+    this.splitPane(this.activePaneId, direction, initialText);
+  }
+
+  public splitPane(
+    paneId: string,
+    direction: 'horizontal' | 'vertical',
+    initialText?: string,
+  ): void {
     const targetNode = this.paneMap.get(paneId);
     if (!targetNode || targetNode.type !== 'leaf') return;
 
     const newId = `pane-${Date.now()}`;
-    const newState = new VemEditorState(targetNode.state.getBuffer().getText());
+    const newState = new VemEditorState(initialText ?? targetNode.state.getBuffer().getText());
 
     // Inherit old state's custom keybindings
     const oldBindings = targetNode.state.getCustomKeybindings();

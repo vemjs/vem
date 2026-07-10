@@ -47,6 +47,8 @@ export interface VemLayoutConfig {
   sidebarPosition: 'left' | 'right' | 'hidden';
   statusBarPosition: 'bottom' | 'top';
   sidebarWidth: number;
+  /** Gutter numbering: absolute (default) or Vim-style relative-to-cursor. */
+  lineNumbers: 'absolute' | 'relative';
 }
 
 export interface StatuslineSegment {
@@ -101,6 +103,7 @@ const DEFAULT_LAYOUT_CONFIG: VemLayoutConfig = {
   sidebarPosition: 'left',
   statusBarPosition: 'bottom',
   sidebarWidth: 240,
+  lineNumbers: 'absolute',
 };
 
 export class VemEditorState {
@@ -125,6 +128,9 @@ export class VemEditorState {
   private isInsertMutated = false;
   private changeCallbacks: (() => void)[] = [];
   private commandText = '';
+  /** Transient one-line status feedback (e.g. unknown ex-command). Cleared on the next key. */
+  public statusMessage = '';
+  private exCommands: Map<string, (arg: string) => void> = new Map();
   private saveCallbacks: (() => void)[] = [];
   private quitCallbacks: (() => void)[] = [];
   private splitCallbacks: ((direction: 'horizontal' | 'vertical') => void)[] = [];
@@ -435,6 +441,7 @@ export class VemEditorState {
 
   // --- Key Input Entry Point ---
   public handleKey(key: string): void {
+    this.statusMessage = '';
     if (this.activePopup) {
       this.handlePopupKey(key);
       return;
@@ -704,15 +711,50 @@ export class VemEditorState {
     }
   }
 
-  private executeCommandLineText(cmd: string): void {
-    if (cmd === 'w') {
+  /**
+   * Register a custom command-line (ex) command, e.g. `:docs` or `:help`.
+   * The handler receives everything after the command name (trimmed).
+   * App-registered commands take precedence over the built-ins.
+   */
+  public registerExCommand(name: string, handler: (arg: string) => void): void {
+    this.exCommands.set(name, handler);
+  }
+
+  private executeCommandLineText(cmdLine: string): void {
+    const trimmed = cmdLine.trim();
+    if (!trimmed) return;
+    const spaceIdx = trimmed.indexOf(' ');
+    const name = spaceIdx === -1 ? trimmed : trimmed.substring(0, spaceIdx);
+    const arg = spaceIdx === -1 ? '' : trimmed.substring(spaceIdx + 1).trim();
+
+    const custom = this.exCommands.get(name);
+    if (custom) {
+      custom(arg);
+      return;
+    }
+
+    if (name === 'w') {
       this.triggerSave();
-    } else if (cmd === 'q') {
+    } else if (name === 'q') {
       this.triggerQuit();
-    } else if (cmd === 'vsp') {
+    } else if (name === 'vsp') {
       this.triggerSplit('vertical');
-    } else if (cmd === 'sp') {
+    } else if (name === 'sp') {
       this.triggerSplit('horizontal');
+    } else if (name === 'set') {
+      this.executeSetOption(arg);
+    } else {
+      this.statusMessage = `E492: Not an editor command: ${name}`;
+    }
+  }
+
+  private executeSetOption(option: string): void {
+    if (option === 'relativenumber' || option === 'rnu') {
+      this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'relative' };
+    } else if (option === 'norelativenumber' || option === 'nornu') {
+      this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'absolute' };
+    } else {
+      this.statusMessage = `E518: Unknown option: ${option}`;
     }
   }
 

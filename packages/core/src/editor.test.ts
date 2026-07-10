@@ -191,3 +191,45 @@ describe('VemEditorState', () => {
     });
   });
 });
+
+describe('ex-command extensions', () => {
+  it('dispatches registered ex commands with their argument', () => {
+    const editor = new VemEditorState('test');
+    const calls: string[] = [];
+    editor.registerExCommand('docs', (arg) => calls.push(`docs:${arg}`));
+
+    editor.handleKey(':');
+    editor.setCommandText('docs plugins');
+    editor.handleKey('Enter');
+
+    expect(calls).toEqual(['docs:plugins']);
+    expect(editor.getMode()).toBe('NORMAL');
+  });
+
+  it('reports unknown commands via statusMessage and clears it on the next key', () => {
+    const editor = new VemEditorState('test');
+    editor.handleKey(':');
+    editor.setCommandText('nosuchcmd');
+    editor.handleKey('Enter');
+
+    expect(editor.statusMessage).toBe('E492: Not an editor command: nosuchcmd');
+
+    editor.handleKey('j');
+    expect(editor.statusMessage).toBe('');
+  });
+
+  it('toggles relative line numbers via :set rnu / :set nornu', () => {
+    const editor = new VemEditorState('test');
+    expect(editor.layoutConfig.lineNumbers).toBe('absolute');
+
+    editor.handleKey(':');
+    editor.setCommandText('set rnu');
+    editor.handleKey('Enter');
+    expect(editor.layoutConfig.lineNumbers).toBe('relative');
+
+    editor.handleKey(':');
+    editor.setCommandText('set norelativenumber');
+    editor.handleKey('Enter');
+    expect(editor.layoutConfig.lineNumbers).toBe('absolute');
+  });
+});

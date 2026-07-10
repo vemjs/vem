@@ -1,12 +1,10 @@
-import { UIComponent, Text, RichText } from '@vectojs/ui';
+import { UIComponent } from '@vectojs/ui';
 import type { IRenderer } from '@vectojs/core';
 import type { VemEditorState } from '@vemjs/core';
 import { CommandBar } from './CommandBar';
 
 export class VemEditorEntity extends UIComponent {
   private editorState: VemEditorState;
-  private gutterText: Text;
-  private bodyText: RichText;
   private commandBar: CommandBar;
 
   private charWidth = 8.4;
@@ -16,6 +14,14 @@ export class VemEditorEntity extends UIComponent {
   private selectedAutocompleteIndex = 0;
   private isFocused = false;
 
+  // Monospace fonts stack supporting premium programming ligatures.
+  // Editor text is drawn directly on a fixed character grid (charWidth ×
+  // lineHeight) instead of through the rich-text flow layout: paragraph flow
+  // collapses whitespace runs and manages its own line advance, both of which
+  // desync glyphs from the caret/click/selection math a modal editor needs.
+  private readonly editorFont =
+    '14px "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, Monaco, monospace';
+
   constructor(editorState: VemEditorState) {
     super();
     this.editorState = editorState;
@@ -24,36 +30,30 @@ export class VemEditorEntity extends UIComponent {
     this.clipChildren = true;
     this.interactive = true; // Expose as interactive for A11y focus projection
 
-    // Monospace fonts stack supporting premium programming ligatures
-    const premiumFont =
-      '14px "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, Monaco, monospace';
-
-    this.gutterText = new Text('', {
-      font: premiumFont,
-      color: '#64748b', // slate-500
-      lineHeight: this.lineHeight,
-    });
-
-    // Editor body text
-    this.bodyText = new RichText([], {
-      font: premiumFont,
-      color: '#e2e8f0', // slate-200
-    });
-
     this.commandBar = new CommandBar(editorState, this.width);
     this.commandBar.setPosition(0, this.height - 30);
 
-    this.add(this.gutterText);
-    this.add(this.bodyText);
-
     // Try to measure the exact monospace char width if running in browser
     if (typeof document !== 'undefined') {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.font = '14px "JetBrains Mono", "Fira Code", monospace';
-        this.charWidth = ctx.measureText('A').width;
-      }
+      const measure = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.font = this.editorFont;
+          this.charWidth = ctx.measureText('A').width;
+        }
+      };
+      measure();
+      // The webfont usually is not loaded yet at construction time; the
+      // fallback metrics differ from JetBrains Mono, so re-measure once the
+      // real font arrives or every caret/click position drifts per column.
+      document.fonts?.ready
+        ?.then(() => {
+          measure();
+          this.updateFromState();
+          this.scene?.markDirty();
+        })
+        .catch(() => {});
     }
 
     // Register accessibility input handlers
@@ -187,49 +187,9 @@ export class VemEditorEntity extends UIComponent {
   }
 
   public updateFromState(): void {
-    const buffer = this.editorState.getBuffer();
     const cursor = this.editorState.getCursor();
-    const lineCount = buffer.getLineCount();
-    const theme = this.editorState.theme;
-    const layout = this.editorState.layoutConfig;
 
-    // 1. Calculate gutter width dynamically
-    const maxLineDigits = Math.max(2, lineCount.toString().length);
-    const gutterWidth = maxLineDigits * this.charWidth + 15;
-
-    // 2. Sync theme colors
-    this.gutterText.color = theme.gutterFg;
-    this.bodyText.color = theme.fg;
-
-    // 3. Set line numbers text
-    const lineNums: string[] = [];
-    for (let i = 1; i <= lineCount; i++) {
-      lineNums.push(i.toString().padStart(maxLineDigits, ' '));
-    }
-    this.gutterText.setText(lineNums.join('\n'));
-
-    // 4. Set editor body text
-    const spans: any[] = [];
-    const lines = buffer.getLines();
-    lines.forEach((line, idx) => {
-      const suffix = idx === lineCount - 1 ? '' : '\n';
-      const highlight = (this.editorState as any).highlightLine;
-      if (highlight) {
-        const lineSpans = highlight(line, idx);
-        if (lineSpans.length > 0) {
-          const lastSpan = { ...lineSpans[lineSpans.length - 1] };
-          lastSpan.text += suffix;
-          spans.push(...lineSpans.slice(0, -1), lastSpan);
-        } else {
-          spans.push({ text: suffix });
-        }
-      } else {
-        spans.push({ text: line + suffix });
-      }
-    });
-    this.bodyText.setSpans(spans);
-
-    // 5. Handle viewport scrolling to keep cursor visible
+    // 1. Handle viewport scrolling to keep cursor visible
     const visibleLines = Math.floor((this.height - 35) / this.lineHeight); // reserve 35px for status bar
     if (cursor.line >= this.scrollY + visibleLines) {
       this.scrollY = cursor.line - visibleLines + 1;
@@ -237,7 +197,7 @@ export class VemEditorEntity extends UIComponent {
       this.scrollY = cursor.line;
     }
 
-    // 6. Position and layout based on statusBarPosition
+    // 2. Mount/unmount the command bar based on mode
     const hasCommandBar = this.editorState.getMode() === 'COMMAND';
     this.commandBar.updateWidth(this.width);
     if (hasCommandBar) {
@@ -252,15 +212,11 @@ export class VemEditorEntity extends UIComponent {
       }
     }
 
-    const scrollOffsetY = -this.scrollY * this.lineHeight;
+    const layout = this.editorState.layoutConfig;
     if (layout.statusBarPosition === 'top') {
       this.commandBar.setPosition(0, 0);
-      this.gutterText.setPosition(5, 5 + scrollOffsetY + 30);
-      this.bodyText.setPosition(gutterWidth + 5, 5 + scrollOffsetY + 30);
     } else {
       this.commandBar.setPosition(0, this.height - 30);
-      this.gutterText.setPosition(5, 5 + scrollOffsetY);
-      this.bodyText.setPosition(gutterWidth + 5, 5 + scrollOffsetY);
     }
   }
 
@@ -331,10 +287,19 @@ export class VemEditorEntity extends UIComponent {
     r.save();
     r.translate(0, -this.scrollY * this.lineHeight + contentOffsetY);
 
+    // Only touch rows that can be on screen (grid rendering = free virtualization)
+    const firstVisible = Math.max(0, this.scrollY);
+    const lastVisible = Math.min(
+      lineCount - 1,
+      this.scrollY + Math.ceil(this.height / this.lineHeight),
+    );
+    const cursorPos = this.editorState.getCursor();
+    const baselineOf = (lineIdx: number) => 5 + lineIdx * this.lineHeight + this.lineHeight * 0.72;
+
     // 2.5. Draw Gutter Decorations (Git diff signs)
     const decs = (this.editorState as any).gutterDecorations;
     if (decs && decs.size > 0) {
-      for (let l = 0; l < lineCount; l++) {
+      for (let l = firstVisible; l <= lastVisible; l++) {
         const dec = decs.get(l);
         if (dec) {
           const decY = 5 + l * this.lineHeight;
@@ -343,6 +308,42 @@ export class VemEditorEntity extends UIComponent {
           r.closePath();
           r.fill(dec.color);
         }
+      }
+    }
+
+    // 2.6. Draw line numbers on the same grid as the text and caret
+    const relative = layout.lineNumbers === 'relative';
+    for (let l = firstVisible; l <= lastVisible; l++) {
+      const isCursorLine = l === cursorPos.line;
+      const num = relative && !isCursorLine ? Math.abs(l - cursorPos.line) : l + 1;
+      const label = num.toString().padStart(maxLineDigits, ' ');
+      const color = isCursorLine ? theme.fg : theme.gutterFg;
+      r.fillText(label, 5, baselineOf(l), this.editorFont, color);
+    }
+
+    // 2.7. Draw buffer text directly on the character grid: every glyph run
+    // advances by charWidth so caret, click, and selection math always match.
+    const highlight = (this.editorState as any).highlightLine as
+      | ((lineText: string, lineIndex: number) => { text: string; color?: string }[])
+      | undefined;
+    const buffer = this.editorState.getBuffer();
+    for (let l = firstVisible; l <= lastVisible; l++) {
+      const lineText = buffer.getLine(l);
+      if (!lineText) continue;
+      const baseY = baselineOf(l);
+      const spans = highlight ? highlight(lineText, l) : [{ text: lineText }];
+      let col = 0;
+      for (const span of spans) {
+        if (span.text.trim().length > 0) {
+          r.fillText(
+            span.text,
+            gutterWidth + 5 + col * this.charWidth,
+            baseY,
+            this.editorFont,
+            span.color || theme.fg,
+          );
+        }
+        col += span.text.length;
       }
     }
 
@@ -473,7 +474,11 @@ export class VemEditorEntity extends UIComponent {
     r.fill(theme.statusBarBg);
 
     const sl = this.editorState.statuslineLayout;
-    if (
+    const statusMessage = this.editorState.statusMessage;
+    if (mode !== 'COMMAND' && statusMessage) {
+      // Transient feedback (unknown command, option errors) wins the bar
+      r.fillText(statusMessage, 10, statusY + 18, 'bold 12px monospace', '#f87171');
+    } else if (
       mode !== 'COMMAND' &&
       ((sl.left && sl.left.length > 0) || (sl.right && sl.right.length > 0))
     ) {
