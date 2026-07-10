@@ -711,10 +711,26 @@ export class VemEditorState {
     }
   }
 
+  private static globalExCommands: Map<string, (arg: string, state: VemEditorState) => void> =
+    new Map();
+
   /**
-   * Register a custom command-line (ex) command, e.g. `:docs` or `:help`.
-   * The handler receives everything after the command name (trimmed).
-   * App-registered commands take precedence over the built-ins.
+   * Register an ex command for EVERY editor state — Vim commands are
+   * editor-global, so this is what applications almost always want: states
+   * created later (splits, tabs) see the command too. The handler receives
+   * the argument text and the state the command ran in.
+   */
+  public static registerGlobalExCommand(
+    name: string,
+    handler: (arg: string, state: VemEditorState) => void,
+  ): void {
+    VemEditorState.globalExCommands.set(name, handler);
+  }
+
+  /**
+   * Register a custom command-line (ex) command, e.g. `:docs` or `:help`,
+   * on this state only. Instance commands win over global ones, which win
+   * over the built-ins.
    */
   public registerExCommand(name: string, handler: (arg: string) => void): void {
     this.exCommands.set(name, handler);
@@ -730,6 +746,11 @@ export class VemEditorState {
     const custom = this.exCommands.get(name);
     if (custom) {
       custom(arg);
+      return;
+    }
+    const global = VemEditorState.globalExCommands.get(name);
+    if (global) {
+      global(arg, this);
       return;
     }
 

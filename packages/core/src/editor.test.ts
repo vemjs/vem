@@ -233,3 +233,23 @@ describe('ex-command extensions', () => {
     expect(editor.layoutConfig.lineNumbers).toBe('absolute');
   });
 });
+
+describe('global ex commands', () => {
+  it('are visible from every state, including ones created later', () => {
+    const calls: string[] = [];
+    VemEditorState.registerGlobalExCommand('helptest', (arg, state) =>
+      calls.push(`${arg}|${state.getBuffer().getLine(0)}`),
+    );
+
+    const a = new VemEditorState('first');
+    const b = new VemEditorState('second');
+    for (const ed of [a, b]) {
+      ed.handleKey(':');
+      ed.setCommandText('helptest topic');
+      ed.handleKey('Enter');
+    }
+
+    expect(calls).toEqual(['topic|first', 'topic|second']);
+    expect(a.statusMessage).toBe('');
+  });
+});
