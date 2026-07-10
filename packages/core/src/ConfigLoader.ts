@@ -42,7 +42,7 @@ export class ConfigLoader {
 
   public async loadConfigFromFile(configPath: string, registry: any): Promise<void> {
     try {
-      const configModule = await import(configPath);
+      const configModule = await import(/* @vite-ignore */ configPath);
       const config: VemConfig = configModule.default || configModule;
       await this.loadConfigFromObject(config, registry);
       console.log(`Config loaded from [${configPath}].`);
@@ -57,7 +57,7 @@ export class ConfigLoader {
       if (typeof URL !== 'undefined' && typeof Blob !== 'undefined') {
         const blob = new Blob([jsContent], { type: 'application/javascript' });
         const url = URL.createObjectURL(blob);
-        configModule = await import(url);
+        configModule = await import(/* @vite-ignore */ url);
         URL.revokeObjectURL(url);
       } else {
         // Node.js fallback using Function constructor evaluation
