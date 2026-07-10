@@ -253,3 +253,93 @@ describe('global ex commands', () => {
     expect(a.statusMessage).toBe('');
   });
 });
+
+describe('command mode editing', () => {
+  it('leaves COMMAND mode when backspacing over the empty : prompt', () => {
+    const editor = new VemEditorState('x');
+    editor.handleKey(':');
+    expect(editor.getMode()).toBe('COMMAND');
+    editor.handleKey('Backspace');
+    expect(editor.getMode()).toBe('NORMAL');
+  });
+
+  it('deletes command characters before exiting on the final backspace', () => {
+    const editor = new VemEditorState('x');
+    editor.handleKey(':');
+    editor.setCommandText('wq');
+    editor.handleKey('Backspace');
+    expect(editor.getCommandText()).toBe('w');
+    expect(editor.getMode()).toBe('COMMAND');
+  });
+
+  it('force-quits on :q! and passes force to the quit handler', () => {
+    const editor = new VemEditorState('x');
+    const forces: boolean[] = [];
+    editor.onQuit((force) => forces.push(force));
+
+    editor.handleKey(':');
+    editor.setCommandText('q');
+    editor.handleKey('Enter');
+    editor.handleKey(':');
+    editor.setCommandText('q!');
+    editor.handleKey('Enter');
+
+    expect(forces).toEqual([false, true]);
+  });
+
+  it('saves then quits on :wq and :x', () => {
+    const editor = new VemEditorState('x');
+    let saves = 0;
+    let quits = 0;
+    editor.onSave(() => saves++);
+    editor.onQuit(() => quits++);
+
+    for (const cmd of ['wq', 'x']) {
+      editor.handleKey(':');
+      editor.setCommandText(cmd);
+      editor.handleKey('Enter');
+    }
+    expect(saves).toBe(2);
+    expect(quits).toBe(2);
+  });
+});
+
+describe('macro recording and replay', () => {
+  it('records q{reg} … q and replays with @{reg}', () => {
+    const editor = new VemEditorState('abcdef');
+    // Record into register a: delete two chars (x x)
+    editor.handleKey('q');
+    editor.handleKey('a');
+    expect(editor.isRecording()).toBe(true);
+    expect(editor.getRecordingRegister()).toBe('a');
+    editor.handleKey('x');
+    editor.handleKey('x');
+    editor.handleKey('q');
+    expect(editor.isRecording()).toBe(false);
+    expect(editor.getBuffer().getLine(0)).toBe('cdef');
+
+    // Replay deletes two more
+    editor.handleKey('@');
+    editor.handleKey('a');
+    expect(editor.getBuffer().getLine(0)).toBe('ef');
+
+    // @@ repeats the last macro
+    editor.setCursor(0, 0);
+    editor.getBuffer().setLine(0, 'ghijkl');
+    editor.handleKey('@');
+    editor.handleKey('@');
+    expect(editor.getBuffer().getLine(0)).toBe('ijkl');
+  });
+
+  it('does not treat q typed in INSERT mode as a macro control key', () => {
+    const editor = new VemEditorState('');
+    editor.handleKey('q'); // start recording prompt
+    editor.handleKey('a'); // register a
+    editor.handleKey('i'); // INSERT
+    editor.handleKey('q'); // literal q, recorded
+    editor.handleKey('Escape');
+    editor.handleKey('q'); // stop recording
+    expect(editor.isRecording()).toBe(false);
+    expect(editor.getBuffer().getLine(0)).toBe('q');
+  });
+});

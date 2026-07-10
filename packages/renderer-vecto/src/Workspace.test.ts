@@ -3,58 +3,98 @@ import { VemWorkspace } from './Workspace';
 import { WorkspaceLayout } from './WorkspaceLayout';
 
 describe('VemWorkspace', () => {
-  it('should mount the new active tab content when adding a tab', () => {
-    const workspace = new VemWorkspace(800, 600, 'one');
-    const firstLayout = workspace.getActiveLayout();
-    const detached: unknown[] = [];
+  const stubScene = (workspace: VemWorkspace, detached?: unknown[]) => {
     Object.defineProperty(workspace, 'scene', {
       configurable: true,
       value: {
         a11yNeedsReorder: false,
         markDirty() {},
         detachA11y(child: unknown) {
-          detached.push(child);
+          detached?.push(child);
         },
       },
     });
+  };
 
-    workspace.addTab('two');
+  it('mounts the new active buffer content when opening a tab', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    const firstLayout = workspace.getActiveLayout();
+    const detached: unknown[] = [];
+    stubScene(workspace, detached);
+
+    const id = workspace.openBuffer('two', 'two.ts');
 
     const secondLayout = workspace.getActiveLayout();
-    const tabs = (
-      workspace as unknown as {
-        tabsComponent: {
-          value: string;
-          children: unknown[];
-        };
-      }
-    ).tabsComponent;
+    const tabs = (workspace as unknown as { tabsComponent: { value: string; children: unknown[] } })
+      .tabsComponent;
 
-    expect(tabs.value).toBe('tab-2');
-    expect(secondLayout).toBeDefined();
+    expect(tabs.value).toBe(id);
     expect(secondLayout).not.toBe(firstLayout);
     expect(tabs.children).toContain(secondLayout);
     expect(tabs.children).not.toContain(firstLayout);
     expect(detached).toEqual([firstLayout]);
   });
 
-  it('should resize every layout on update so panes track the hosting panel width', () => {
+  it('uses stable ids so closing a middle tab does not renumber survivors', () => {
     const workspace = new VemWorkspace(800, 600, 'one');
-    workspace.addTab('two');
+    stubScene(workspace);
+    const a = workspace.getActiveBufferId();
+    const b = workspace.openBuffer('two', 'b');
+    const c = workspace.openBuffer('three', 'c');
 
-    // Simulate the hosting Panel handing down a narrower size (e.g. after
-    // PanelGroup reserves divider space) — previously layouts kept their
-    // construction width and escaped the panel's clip bounds.
+    workspace.closeTab(b);
+
+    const buffers = (workspace as unknown as { buffers: { id: string }[] }).buffers;
+    expect(buffers.map((x) => x.id)).toEqual([a, c]);
+    // c is still selectable and mounts its own layout
+    expect(workspace.getActiveBufferId()).toBe(c);
+  });
+
+  it('never destroys the last tab — resets it to an empty untitled buffer', () => {
+    const workspace = new VemWorkspace(800, 600, 'only');
+    stubScene(workspace);
+    const only = workspace.getActiveBufferId();
+
+    workspace.closeTab(only);
+
+    const buffers = (workspace as unknown as { buffers: { id: string }[] }).buffers;
+    expect(buffers.length).toBe(1);
+    expect(buffers[0].id).not.toBe(only);
+    expect(workspace.getActiveLayout()?.getActiveState()?.getText()).toBe('');
+  });
+
+  it('resizes every layout on update so panes track the hosting panel width', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    stubScene(workspace);
+    workspace.openBuffer('two', 'two');
+
     workspace.width = 788.8;
     workspace.height = 500;
     workspace.update(16, 0);
 
-    const layouts = (workspace as unknown as { layouts: WorkspaceLayout[] }).layouts;
-    expect(layouts.length).toBe(2);
-    for (const layout of layouts) {
-      expect(layout.width).toBe(788.8);
-      expect(layout.height).toBe(470);
+    const buffers = (workspace as unknown as { buffers: { layout: WorkspaceLayout }[] }).buffers;
+    expect(buffers.length).toBe(2);
+    for (const b of buffers) {
+      expect(b.layout.width).toBe(788.8);
+      expect(b.layout.height).toBe(470);
     }
+  });
+
+  it('closes the tab when :q is issued on an unsplit layout', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    stubScene(workspace);
+    const a = workspace.getActiveBufferId();
+    workspace.openBuffer('two', 'two');
+    const state = workspace.getActiveLayout()!.getActiveState()!;
+
+    // :q on the last (unsplit) pane bubbles up to close the tab.
+    state.handleKey(':');
+    state.setCommandText('q');
+    state.handleKey('Enter');
+
+    const buffers = (workspace as unknown as { buffers: { id: string }[] }).buffers;
+    expect(buffers.length).toBe(1);
+    expect(buffers[0].id).toBe(a);
   });
 });
 

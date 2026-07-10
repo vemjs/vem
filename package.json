@@ -25,5 +25,8 @@
   "workspaces": [
     "packages/*",
     "plugins/*"
-  ]
+  ],
+  "dependencies": {
+    "@vectojs/ui": "^1.1.3"
+  }
 }

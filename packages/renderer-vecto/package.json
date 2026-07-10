@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@vectojs/core": "^1.0.1",
-    "@vectojs/ui": "^1.1.2",
+    "@vectojs/ui": "^1.1.3",
     "@vemjs/core": "^0.1.6"
   },
   "publishConfig": {

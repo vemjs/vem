@@ -540,7 +540,8 @@ export class VemEditorEntity extends UIComponent {
       }
     } else if (mode !== 'COMMAND') {
       // Default fallback status bar
-      const modeText = `-- ${mode} --`;
+      const recReg = this.editorState.getRecordingRegister?.();
+      const modeText = recReg ? `-- ${mode} --  recording @${recReg}` : `-- ${mode} --`;
       const posText = `${cursor.line + 1}:${cursor.character + 1}`;
       const pendingKeys = this.editorState.getPendingKeys();
       const pendingText = pendingKeys.length > 0 ? pendingKeys.join('') : '';

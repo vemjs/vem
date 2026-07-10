@@ -10,7 +10,10 @@ export class WorkspaceExplorer extends UIComponent {
   private workspace: VemWorkspace;
   private treeView: TreeView | null = null;
   private openBtn: Button;
+  private openFileBtn: Button;
   private fsHandler: FileSystemHandler;
+  /** When true the file-tree sidebar is force-hidden regardless of theme layout. */
+  private sidebarHidden = false;
   private openDirectoryCallbacks: ((
     files: any[],
     fsHandler: FileSystemHandler,
@@ -44,7 +47,19 @@ export class WorkspaceExplorer extends UIComponent {
     this.openBtn.height = 35;
     this.openBtn.setPosition(15, 15);
 
+    this.openFileBtn = new Button('Open File', {
+      onClick: () => this.handleOpenFile(),
+      bg: '#1e293b',
+      hoverBg: '#334155',
+      font: '14px monospace',
+      color: '#e2e8f0',
+    });
+    this.openFileBtn.width = 120;
+    this.openFileBtn.height = 35;
+    this.openFileBtn.setPosition(15, 58);
+
     this.leftPanel.add(this.openBtn);
+    this.leftPanel.add(this.openFileBtn);
     this.rightPanel.add(this.workspace);
 
     this.panelGroup.addPanel(this.leftPanel);
@@ -84,7 +99,27 @@ export class WorkspaceExplorer extends UIComponent {
       panel.add(this.treeView);
     } else {
       panel.add(this.openBtn);
+      panel.add(this.openFileBtn);
     }
+  }
+
+  /** Whether the file-tree sidebar is currently visible. */
+  public isSidebarVisible(): boolean {
+    return !this.sidebarHidden;
+  }
+
+  /** Show/hide the file-tree sidebar (issue: panels should be closable). */
+  public setSidebarVisible(visible: boolean): void {
+    if (this.sidebarHidden === !visible) return;
+    this.sidebarHidden = !visible;
+    const state = this.getActiveEditorState();
+    if (state) this.syncLayout(state);
+    this.scene?.markDirty();
+  }
+
+  /** Toggle the file-tree sidebar. */
+  public toggleSidebar(): void {
+    this.setSidebarVisible(this.sidebarHidden);
   }
 
   private async handleOpenFolder(): Promise<void> {
@@ -116,7 +151,8 @@ export class WorkspaceExplorer extends UIComponent {
           const fileHandle = this.fsHandler.getFileHandle(node.id);
           if (fileHandle) {
             const content = await this.fsHandler.readFile(fileHandle);
-            this.workspace.addTab(content);
+            const label = node.label ?? node.id.split('/').pop() ?? 'file';
+            this.openFileBuffer(content, label, fileHandle);
           }
         },
       });
@@ -135,6 +171,50 @@ export class WorkspaceExplorer extends UIComponent {
       }
     } catch (err) {
       console.error('Error selecting directory:', err);
+    }
+  }
+
+  /**
+   * Open file content in a new tab labeled with the file name, and wire `:w`
+   * on that buffer to write back to disk through the File System Access API.
+   */
+  public openFileBuffer(content: string, label: string, fileHandle?: FileSystemFileHandle): string {
+    const id = this.workspace.openBuffer(content, label);
+    const state = this.workspace.getActiveLayout()?.getActiveState();
+    if (state && fileHandle) {
+      state.onSave(async () => {
+        try {
+          await this.fsHandler.saveFile(fileHandle, state.getText());
+          state.statusMessage = `"${label}" written`;
+        } catch (err) {
+          state.statusMessage = `E212: Can't open file for writing`;
+          console.error('Failed to save file:', err);
+        }
+        this.scene?.markDirty();
+      });
+    }
+    return id;
+  }
+
+  /**
+   * Prompt for a single file (not a folder) and open it. Complements
+   * "Open Folder" so the sidebar can open individual files too.
+   */
+  public async handleOpenFile(): Promise<void> {
+    if (typeof window === 'undefined' || !(window as any).showOpenFilePicker) {
+      console.warn('File System Access API is not supported in this environment.');
+      return;
+    }
+    try {
+      const [handle] = await (window as any).showOpenFilePicker();
+      if (!handle) return;
+      const content = await this.fsHandler.readFile(handle);
+      this.openFileBuffer(content, handle.name, handle);
+    } catch (err) {
+      // AbortError = user cancelled the picker; not an error worth logging.
+      if ((err as { name?: string })?.name !== 'AbortError') {
+        console.error('Error opening file:', err);
+      }
     }
   }
 
@@ -163,13 +243,15 @@ export class WorkspaceExplorer extends UIComponent {
     });
     this.rightPanel = new Panel({ minSize: 300 });
 
-    if (layout.sidebarPosition === 'left') {
+    const effectivePosition = this.sidebarHidden ? 'hidden' : layout.sidebarPosition;
+
+    if (effectivePosition === 'left') {
       this.addSidebarContent(this.leftPanel);
       this.rightPanel.add(this.workspace);
 
       this.panelGroup.addPanel(this.leftPanel);
       this.panelGroup.addPanel(this.rightPanel);
-    } else if (layout.sidebarPosition === 'right') {
+    } else if (effectivePosition === 'right') {
       this.addSidebarContent(this.leftPanel);
       this.rightPanel.add(this.workspace);
 

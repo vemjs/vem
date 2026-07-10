@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'bun:test';
-import { FileSystemHandler } from './FileSystemHandler';
+import { FileSystemHandler, fileIcon } from './FileSystemHandler';
+
+describe('fileIcon', () => {
+  it('maps common extensions to distinct material-style icons', () => {
+    expect(fileIcon('main.ts').icon).toBe('TS');
+    expect(fileIcon('a.js').icon).toBe('JS');
+    expect(fileIcon('data.json').icon).toBe('{}');
+    expect(fileIcon('README.md').icon).toBe('M');
+    expect(fileIcon('.gitignore').icon).toBe('⑂');
+    expect(fileIcon('unknown.xyz')).toEqual({ icon: '📄', color: '#94a3b8' });
+  });
+});
 
 describe('FileSystemHandler', () => {
   it('should map directory entries to TreeNode structures and sort folders first', async () => {
@@ -39,7 +50,9 @@ describe('FileSystemHandler', () => {
     expect(nodes[0].label).toBe('components');
     expect(nodes[0].icon).toBe('📁');
     expect(nodes[1].label).toBe('index.ts');
-    expect(nodes[1].icon).toBe('📄');
+    // TypeScript files get a material-style TS badge with a distinct color.
+    expect(nodes[1].icon).toBe('TS');
+    expect((nodes[1] as { iconColor?: string }).iconColor).toBe('#3178c6');
 
     // Test lazy children loading
     const childrenFunc = nodes[0].children as () => Promise<any[]>;

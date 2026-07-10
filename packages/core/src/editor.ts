@@ -132,7 +132,7 @@ export class VemEditorState {
   public statusMessage = '';
   private exCommands: Map<string, (arg: string) => void> = new Map();
   private saveCallbacks: (() => void)[] = [];
-  private quitCallbacks: (() => void)[] = [];
+  private quitCallbacks: ((force: boolean) => void)[] = [];
   private splitCallbacks: ((direction: 'horizontal' | 'vertical') => void)[] = [];
   private customKeybindings: Map<EditorMode, Map<string, string>> = new Map();
   private didOpenBufferCallbacks: (() => void)[] = [];
@@ -168,7 +168,7 @@ export class VemEditorState {
     this.saveCallbacks.push(callback);
   }
 
-  public onQuit(callback: () => void): void {
+  public onQuit(callback: (force: boolean) => void): void {
     this.quitCallbacks.push(callback);
   }
 
@@ -182,9 +182,9 @@ export class VemEditorState {
     }
   }
 
-  private triggerQuit(): void {
+  private triggerQuit(force = false): void {
     for (const cb of this.quitCallbacks) {
-      cb();
+      cb(force);
     }
   }
 
@@ -439,8 +439,87 @@ export class VemEditorState {
     this.triggerChange();
   }
 
+  // --- Macro recording / replay (Vim q / @) ---
+  private recordingRegister: string | null = null;
+  private recordedKeys: string[] = [];
+  private macroRegisters: Map<string, string[]> = new Map();
+  private isReplaying = false;
+  private awaitingRecordRegister = false;
+  private awaitingReplayRegister = false;
+  private lastPlayedRegister: string | null = null;
+
+  /** True while `q{reg}` recording is active. */
+  public isRecording(): boolean {
+    return this.recordingRegister !== null;
+  }
+
+  /** The register currently being recorded into, or null. */
+  public getRecordingRegister(): string | null {
+    return this.recordingRegister;
+  }
+
+  private replayMacro(reg: string): void {
+    const keys = this.macroRegisters.get(reg);
+    if (!keys || keys.length === 0) return;
+    this.lastPlayedRegister = reg;
+    // Nested macro-control is suppressed during replay to avoid runaway
+    // recursion in a browser tab; a replayed buffer is executed literally.
+    this.isReplaying = true;
+    try {
+      for (const k of keys) this.dispatchKey(k);
+    } finally {
+      this.isReplaying = false;
+    }
+    this.triggerChange();
+  }
+
   // --- Key Input Entry Point ---
   public handleKey(key: string): void {
+    // Macro control lives above the dispatcher so `q`/`@` are intercepted
+    // before they reach normal-mode command parsing — but only at top level
+    // (NORMAL mode, no pending multi-key sequence, not mid-replay).
+    if (!this.isReplaying && this.mode === 'NORMAL' && this.pendingKeys.length === 0) {
+      if (this.awaitingRecordRegister) {
+        this.awaitingRecordRegister = false;
+        if (/^[a-z0-9]$/i.test(key)) {
+          this.recordingRegister = key.toLowerCase();
+          this.recordedKeys = [];
+          this.triggerChange();
+        }
+        return;
+      }
+      if (this.awaitingReplayRegister) {
+        this.awaitingReplayRegister = false;
+        const reg = key === '@' ? this.lastPlayedRegister : key.toLowerCase();
+        if (reg) this.replayMacro(reg);
+        return;
+      }
+      if (key === 'q') {
+        if (this.recordingRegister) {
+          this.macroRegisters.set(this.recordingRegister, [...this.recordedKeys]);
+          this.recordingRegister = null;
+          this.triggerChange();
+        } else {
+          this.awaitingRecordRegister = true;
+        }
+        return;
+      }
+      if (key === '@') {
+        this.awaitingReplayRegister = true;
+        return;
+      }
+    }
+
+    // Capture the raw keystroke into the active recording (the stop-`q` and
+    // register selectors are handled above, so they never land here).
+    if (this.recordingRegister && !this.isReplaying) {
+      this.recordedKeys.push(key);
+    }
+
+    this.dispatchKey(key);
+  }
+
+  private dispatchKey(key: string): void {
     this.statusMessage = '';
     if (this.activePopup) {
       this.handlePopupKey(key);
@@ -461,6 +540,14 @@ export class VemEditorState {
         return;
       }
       if (key === 'Backspace') {
+        // Backspacing over the ':' prompt (empty command line) leaves COMMAND
+        // mode, matching Vim — otherwise the ':' is undeletable and only Escape
+        // gets you out.
+        if (this.commandText.length === 0) {
+          this.setMode('NORMAL');
+          this.triggerChange();
+          return;
+        }
         this.commandText = this.commandText.substring(0, this.commandText.length - 1);
         this.triggerChange();
         return;
@@ -754,15 +841,22 @@ export class VemEditorState {
       return;
     }
 
-    if (name === 'w') {
+    // A trailing '!' forces the command (e.g. :q! quit without saving).
+    const force = name.endsWith('!');
+    const base = force ? name.slice(0, -1) : name;
+
+    if (base === 'w') {
       this.triggerSave();
-    } else if (name === 'q') {
-      this.triggerQuit();
-    } else if (name === 'vsp') {
+    } else if (base === 'q') {
+      this.triggerQuit(force);
+    } else if (base === 'wq' || base === 'x') {
+      this.triggerSave();
+      this.triggerQuit(force);
+    } else if (base === 'vsp' || base === 'vs') {
       this.triggerSplit('vertical');
-    } else if (name === 'sp') {
+    } else if (base === 'sp') {
       this.triggerSplit('horizontal');
-    } else if (name === 'set') {
+    } else if (base === 'set') {
       this.executeSetOption(arg);
     } else {
       this.statusMessage = `E492: Not an editor command: ${name}`;

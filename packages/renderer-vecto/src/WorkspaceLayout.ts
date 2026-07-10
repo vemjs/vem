@@ -34,6 +34,15 @@ export class WorkspaceLayout extends UIComponent {
   private layoutRoot: Entity | null = null;
   private paneMap = new Map<string, PaneNode>();
   private paneEntityMap = new Map<string, EditorPane>();
+  private lastPaneCloseCallback: (() => void) | null = null;
+
+  /**
+   * Register a handler for `:q` on the final remaining pane. The layout itself
+   * cannot close its last window, so the owner (the tab strip) closes the tab.
+   */
+  public onLastPaneClose(cb: () => void): void {
+    this.lastPaneCloseCallback = cb;
+  }
 
   constructor(width: number, height: number, initialText?: string) {
     super();
@@ -127,7 +136,12 @@ export class WorkspaceLayout extends UIComponent {
   }
 
   public closePane(paneId: string): void {
-    if (this.rootNode.type === 'leaf') return;
+    // The last window can't close itself — ask the owner (tab strip) to close
+    // the whole tab, matching Vim's `:q` on the final split.
+    if (this.rootNode.type === 'leaf') {
+      this.lastPaneCloseCallback?.();
+      return;
+    }
 
     const parentNode = this.findParentNode(this.rootNode, paneId);
     if (!parentNode || parentNode.type !== 'split') return;
