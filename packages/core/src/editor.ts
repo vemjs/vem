@@ -41,6 +41,8 @@ export interface VemTheme {
   statusBarBg: string;
   statusBarFg: string;
   accent: string;
+  /** Color of the `~` empty-line markers (Vim's NonText). Optional; falls back to gutterFg. */
+  nonText?: string;
 }
 
 export interface VemLayoutConfig {
@@ -48,7 +50,7 @@ export interface VemLayoutConfig {
   statusBarPosition: 'bottom' | 'top';
   sidebarWidth: number;
   /** Gutter numbering: absolute (default) or Vim-style relative-to-cursor. */
-  lineNumbers: 'absolute' | 'relative';
+  lineNumbers: 'none' | 'absolute' | 'relative';
 }
 
 export interface StatuslineSegment {
@@ -88,22 +90,25 @@ export interface GutterDecoration {
   color: string;
 }
 
+// Faithful to Vim's default dark colorscheme: near-black background, light-grey
+// Normal text, a blue `~` NonText column, and the classic dark-grey StatusLine.
 const DEFAULT_THEME: VemTheme = {
-  bg: '#0f172a',
-  fg: '#e2e8f0',
-  sidebarBg: '#090d16',
-  gutterBg: '#0b0f19',
-  gutterFg: '#64748b',
-  statusBarBg: '#1e293b',
-  statusBarFg: '#e2e8f0',
-  accent: '#8b5cf6',
+  bg: '#000000',
+  fg: '#d0d0d0',
+  sidebarBg: '#080808',
+  gutterBg: '#000000',
+  gutterFg: '#767676', // LineNr (dark grey)
+  statusBarBg: '#bcbcbc', // StatusLine: light bar with dark text (Vim default)
+  statusBarFg: '#080808',
+  accent: '#5f87d7', // Directory / SpecialKey blue used by :intro and the caret
+  nonText: '#5f87d7', // the `~` empty-line marker (NonText)
 };
 
 const DEFAULT_LAYOUT_CONFIG: VemLayoutConfig = {
   sidebarPosition: 'left',
   statusBarPosition: 'bottom',
   sidebarWidth: 240,
-  lineNumbers: 'absolute',
+  lineNumbers: 'none',
 };
 
 export class VemEditorState {
@@ -900,7 +905,13 @@ export class VemEditorState {
     if (option === 'relativenumber' || option === 'rnu') {
       this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'relative' };
     } else if (option === 'norelativenumber' || option === 'nornu') {
+      // Falls back to absolute if numbers are on, else stays off.
+      const next = this.layoutConfig.lineNumbers === 'relative' ? 'absolute' : 'none';
+      this.layoutConfig = { ...this.layoutConfig, lineNumbers: next };
+    } else if (option === 'number' || option === 'nu') {
       this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'absolute' };
+    } else if (option === 'nonumber' || option === 'nonu') {
+      this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'none' };
     } else {
       this.statusMessage = `E518: Unknown option: ${option}`;
     }
@@ -1296,7 +1307,20 @@ export class VemEditorState {
 
   // --- Undo & Redo ---
   private saveStateForUndo(): void {
+    this.modified = true;
     this.undoManager.push(this.buffer.getLines());
+  }
+
+  /** True once the buffer has been edited; drives Vim's intro-screen dismissal. */
+  public modified = false;
+
+  /**
+   * Whether Vim's centered intro splash should show: an unmodified, empty,
+   * single-line buffer (the fresh-start screen). Cleared the moment the buffer
+   * is touched.
+   */
+  public shouldShowIntro(): boolean {
+    return !this.modified && this.buffer.getLineCount() === 1 && this.buffer.getLine(0) === '';
   }
 
   public undo(): void {

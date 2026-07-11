@@ -218,8 +218,14 @@ describe('ex-command extensions', () => {
     expect(editor.statusMessage).toBe('');
   });
 
-  it('toggles relative line numbers via :set rnu / :set nornu', () => {
+  it('toggles line numbers via :set number / rnu / nonumber', () => {
     const editor = new VemEditorState('test');
+    // Vim default is nonumber.
+    expect(editor.layoutConfig.lineNumbers).toBe('none');
+
+    editor.handleKey(':');
+    editor.setCommandText('set number');
+    editor.handleKey('Enter');
     expect(editor.layoutConfig.lineNumbers).toBe('absolute');
 
     editor.handleKey(':');
@@ -367,5 +373,27 @@ describe('Ctrl scroll motions', () => {
     expect(editor.getCursor().line).toBe(2);
     editor.handleKey('<C-u>');
     expect(editor.getCursor().line).toBe(0);
+  });
+});
+
+describe('Vim intro screen gating', () => {
+  it('shows the intro for a fresh empty buffer and hides it after any edit', () => {
+    const editor = new VemEditorState('');
+    expect(editor.shouldShowIntro()).toBe(true);
+
+    // Cursor motion in an empty buffer keeps the intro (buffer still pristine).
+    editor.handleKey('j');
+    expect(editor.shouldShowIntro()).toBe(true);
+
+    // Typing dismisses it.
+    editor.handleKey('i');
+    editor.handleKey('x');
+    expect(editor.modified).toBe(true);
+    expect(editor.shouldShowIntro()).toBe(false);
+  });
+
+  it('does not show the intro when the buffer starts with content', () => {
+    const editor = new VemEditorState('hello');
+    expect(editor.shouldShowIntro()).toBe(false);
   });
 });

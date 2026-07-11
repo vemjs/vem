@@ -118,6 +118,9 @@ describe('VemEditorEntity autocomplete API', () => {
   });
 
   it('should position the cursor from VectoJS local pointer coordinates', () => {
+    // Turn on absolute line numbers so the gutter has its digit width (the
+    // nonumber default has a zero-width gutter and different click math).
+    editorState.setLayoutConfig({ lineNumbers: 'absolute' });
     Object.defineProperty(entity, 'scene', {
       configurable: true,
       value: {
@@ -228,5 +231,47 @@ describe('VemEditorEntity grid rendering', () => {
     entity.render(r);
 
     expect(texts.some((t) => t.text.includes('E492: Not an editor command: bogus'))).toBe(true);
+  });
+
+  it('draws ~ markers for empty lines and the intro on a fresh empty buffer', () => {
+    const state = new VemEditorState('');
+    const entity = new VemEditorEntity(state) as any;
+    entity.width = 800;
+    entity.height = 600;
+    const { r, texts } = makeRecorder();
+    entity.render(r);
+
+    // Tildes fill the empty area (many, one per screen row below line 0).
+    const tildes = texts.filter((t) => t.text === '~');
+    expect(tildes.length).toBeGreaterThan(5);
+    // All tildes sit at the left edge (x = 5), the NonText column.
+    expect(tildes.every((t) => t.x === 5)).toBe(true);
+    // The intro splash is present.
+    expect(texts.some((t) => t.text.includes('VEM'))).toBe(true);
+    expect(texts.some((t) => t.text === '<Enter>')).toBe(true);
+  });
+
+  it('hides the intro and shows a ruler once the buffer has content', () => {
+    const state = new VemEditorState('hello world');
+    const entity = new VemEditorEntity(state) as any;
+    entity.width = 800;
+    entity.height = 600;
+    const { r, texts } = makeRecorder();
+    entity.render(r);
+
+    expect(texts.some((t) => t.text.includes('VEM'))).toBe(false);
+    // Ruler shows line,col for a non-empty buffer.
+    expect(texts.some((t) => t.text === '1,1')).toBe(true);
+    expect(texts.some((t) => t.text === 'All')).toBe(true);
+  });
+
+  it('shows the Vim empty-buffer ruler 0,0-1', () => {
+    const state = new VemEditorState('');
+    const entity = new VemEditorEntity(state) as any;
+    entity.width = 800;
+    entity.height = 600;
+    const { r, texts } = makeRecorder();
+    entity.render(r);
+    expect(texts.some((t) => t.text === '0,0-1')).toBe(true);
   });
 });

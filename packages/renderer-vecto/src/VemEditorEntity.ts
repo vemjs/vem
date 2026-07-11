@@ -156,9 +156,7 @@ export class VemEditorEntity extends UIComponent {
       const layout = this.editorState.layoutConfig;
       const contentOffsetY = layout.statusBarPosition === 'top' ? 30 : 0;
 
-      const lineCount = this.editorState.getBuffer().getLineCount();
-      const maxLineDigits = Math.max(2, lineCount.toString().length);
-      const gutterWidth = maxLineDigits * this.charWidth + 15;
+      const gutterWidth = this.gutterWidth();
 
       const relativeY = localY - contentOffsetY + this.scrollY * this.lineHeight - 5;
       const clickedLine = Math.floor(relativeY / this.lineHeight);
@@ -184,6 +182,70 @@ export class VemEditorEntity extends UIComponent {
     this.on('click', handlePointerClick);
 
     this.updateFromState();
+  }
+
+  /**
+   * Left gutter width. Zero when line numbers are off (Vim's `nonumber`
+   * default) so text and the `~` markers sit at the left edge; otherwise wide
+   * enough for the line-number digits.
+   */
+  private gutterWidth(): number {
+    const ln = this.editorState.layoutConfig.lineNumbers;
+    if (ln !== 'absolute' && ln !== 'relative') return 0;
+    const lineCount = this.editorState.getBuffer().getLineCount();
+    const maxLineDigits = Math.max(2, lineCount.toString().length);
+    return maxLineDigits * this.charWidth + 15;
+  }
+
+  /**
+   * The centered Vim-style intro splash. Vem-branded but faithful to Vim's
+   * `:intro` format; `<Enter>`/`<F1>` tokens render in the accent (Directory)
+   * color like Vim.
+   */
+  private drawIntro(r: IRenderer, theme: { fg: string; accent: string }): void {
+    const lines: string[] = [
+      'VEM - Vim, Enhanced & Modal',
+      '',
+      'a canvas-native modal editor',
+      'Vem is free and open source',
+      '',
+      'type  :help<Enter>       for on-line help',
+      'type  :q<Enter>          to close the buffer',
+      'type  :Explorer<Enter>   to toggle the file tree',
+      'type  :PluginLab<Enter>  to toggle the plugin panel',
+    ];
+    const lh = this.lineHeight;
+    const blockH = lines.length * lh;
+    // Vim places the intro slightly above vertical center.
+    const startY = Math.max(lh, this.height * 0.38 - blockH / 2);
+    // Center on the widest line for a stable left edge (Vim left-aligns the
+    // block, centered as a whole).
+    const widest = lines.reduce((m, l) => Math.max(m, l.length), 0);
+    const blockX = Math.max(0, (this.width - widest * this.charWidth) / 2);
+
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i];
+      const y = startY + i * lh + lh * 0.72;
+      // Color the <...> key tokens in the accent color, rest in fg.
+      const parts = text.split(/(<[^>]+>)/);
+      let col = 0;
+      for (const part of parts) {
+        if (part.length === 0) continue;
+        const color = part.startsWith('<') && part.endsWith('>') ? theme.accent : theme.fg;
+        r.fillText(part, blockX + col * this.charWidth, y, this.editorFont, color);
+        col += part.length;
+      }
+    }
+  }
+
+  /** Vim's ruler scroll indicator: All / Top / Bot / NN%. */
+  private scrollWord(): string {
+    const lineCount = this.editorState.getBuffer().getLineCount();
+    const visible = Math.floor((this.height - 35) / this.lineHeight);
+    if (lineCount <= visible) return 'All';
+    if (this.scrollY <= 0) return 'Top';
+    if (this.scrollY + visible >= lineCount) return 'Bot';
+    return `${Math.round((this.scrollY / (lineCount - visible)) * 100)}%`;
   }
 
   public updateFromState(): void {
@@ -270,7 +332,7 @@ export class VemEditorEntity extends UIComponent {
 
     const lineCount = this.editorState.getBuffer().getLineCount();
     const maxLineDigits = Math.max(2, lineCount.toString().length);
-    const gutterWidth = maxLineDigits * this.charWidth + 15;
+    const gutterWidth = this.gutterWidth();
 
     // 2. Draw gutter background
     r.beginPath();
@@ -311,14 +373,30 @@ export class VemEditorEntity extends UIComponent {
       }
     }
 
-    // 2.6. Draw line numbers on the same grid as the text and caret
+    // 2.6. Draw line numbers on the same grid as the text and caret. Vim's
+    // default is `nonumber`, so numbers only appear when :set number/relnu.
+    const showNumbers = layout.lineNumbers === 'absolute' || layout.lineNumbers === 'relative';
     const relative = layout.lineNumbers === 'relative';
-    for (let l = firstVisible; l <= lastVisible; l++) {
-      const isCursorLine = l === cursorPos.line;
-      const num = relative && !isCursorLine ? Math.abs(l - cursorPos.line) : l + 1;
-      const label = num.toString().padStart(maxLineDigits, ' ');
-      const color = isCursorLine ? theme.fg : theme.gutterFg;
-      r.fillText(label, 5, baselineOf(l), this.editorFont, color);
+    if (showNumbers) {
+      for (let l = firstVisible; l <= lastVisible; l++) {
+        const isCursorLine = l === cursorPos.line;
+        const num = relative && !isCursorLine ? Math.abs(l - cursorPos.line) : l + 1;
+        const label = num.toString().padStart(maxLineDigits, ' ');
+        const color = isCursorLine ? theme.fg : theme.gutterFg;
+        r.fillText(label, 5, baselineOf(l), this.editorFont, color);
+      }
+    }
+
+    // 2.65. Draw `~` markers for screen rows past the end of the buffer —
+    // Vim's NonText empty-line column. Starts at the first row with no buffer
+    // line, so a fresh single-empty-line buffer shows the cursor on row 0 and
+    // tildes below.
+    const nonText = (theme as { nonText?: string }).nonText ?? theme.gutterFg;
+    const screenRows = Math.ceil(this.height / this.lineHeight) + 1;
+    const tildeStart = Math.max(lineCount, firstVisible);
+    const tildeEnd = this.scrollY + screenRows;
+    for (let l = tildeStart; l <= tildeEnd; l++) {
+      r.fillText('~', 5, baselineOf(l), this.editorFont, nonText);
     }
 
     // 2.7. Draw buffer text directly on the character grid: every glyph run
@@ -462,26 +540,37 @@ export class VemEditorEntity extends UIComponent {
 
     r.restore(); // Restore scroll transform
 
+    // 4.5. Vim intro splash — centered, shown only on a fresh empty buffer and
+    // cleared the moment the buffer is edited (see VemEditorState.shouldShowIntro).
+    if ((this.editorState as { shouldShowIntro?: () => boolean }).shouldShowIntro?.()) {
+      this.drawIntro(r, theme);
+    }
+
     // 5. Draw status bar
     const statusBarHeight = 30;
     const statusY = layout.statusBarPosition === 'top' ? 0 : this.height - statusBarHeight;
-    r.beginPath();
-    r.moveTo(0, statusY);
-    r.lineTo(this.width, statusY);
-    r.lineTo(this.width, statusY + statusBarHeight);
-    r.lineTo(0, statusY + statusBarHeight);
-    r.closePath();
-    r.fill(theme.statusBarBg);
-
     const sl = this.editorState.statuslineLayout;
+    const hasCustomStatusline =
+      (sl.left && sl.left.length > 0) || (sl.right && sl.right.length > 0);
+    // Only paint a statusline bar when a plugin (lualine) supplies one. Bare Vim
+    // (`laststatus=1`, single window) shows no bar — just the ruler + mode
+    // message on the last line over the editor background.
+    if (hasCustomStatusline) {
+      r.beginPath();
+      r.moveTo(0, statusY);
+      r.lineTo(this.width, statusY);
+      r.lineTo(this.width, statusY + statusBarHeight);
+      r.lineTo(0, statusY + statusBarHeight);
+      r.closePath();
+      r.fill(theme.statusBarBg);
+    }
+
     const statusMessage = this.editorState.statusMessage;
+    const statusFg = hasCustomStatusline ? theme.statusBarFg : theme.fg;
     if (mode !== 'COMMAND' && statusMessage) {
       // Transient feedback (unknown command, option errors) wins the bar
       r.fillText(statusMessage, 10, statusY + 18, 'bold 12px monospace', '#f87171');
-    } else if (
-      mode !== 'COMMAND' &&
-      ((sl.left && sl.left.length > 0) || (sl.right && sl.right.length > 0))
-    ) {
+    } else if (mode !== 'COMMAND' && hasCustomStatusline) {
       // Custom statusline layout (lualine-like)
       let startX = 0;
       if (sl.left) {
@@ -539,18 +628,34 @@ export class VemEditorEntity extends UIComponent {
         }
       }
     } else if (mode !== 'COMMAND') {
-      // Default fallback status bar
+      // Bare Vim last line: mode message on the left (only INSERT/VISUAL/REPLACE
+      // — NORMAL shows nothing, matching `showmode`), pending keys + ruler on
+      // the right.
       const recReg = this.editorState.getRecordingRegister?.();
-      const modeText = recReg ? `-- ${mode} --  recording @${recReg}` : `-- ${mode} --`;
-      const posText = `${cursor.line + 1}:${cursor.character + 1}`;
+      const y = statusY + 18;
+      const modeLabel = mode === 'NORMAL' ? '' : `-- ${mode} --`;
+      const leftText = recReg
+        ? `${modeLabel}${modeLabel ? '  ' : ''}recording @${recReg}`
+        : modeLabel;
+      if (leftText) {
+        r.fillText(leftText, 10, y, 'bold 12px monospace', statusFg);
+      }
+
+      // Ruler: `line,col-vcol` + scroll position (Top/Bot/All/NN%). An empty
+      // buffer reads `0,0-1` like Vim.
+      const isEmpty =
+        this.editorState.getBuffer().getLineCount() === 1 &&
+        this.editorState.getBuffer().getLine(0) === '';
+      const rulerPos = isEmpty ? '0,0-1' : `${cursor.line + 1},${cursor.character + 1}`;
+      const scrollWord = this.scrollWord();
+      r.fillText(scrollWord, this.width - 60, y, '12px monospace', statusFg);
+      r.fillText(rulerPos, this.width - 180, y, '12px monospace', statusFg);
+
       const pendingKeys = this.editorState.getPendingKeys();
       const pendingText = pendingKeys.length > 0 ? pendingKeys.join('') : '';
-
-      r.fillText(modeText, 10, statusY + 18, 'bold 12px monospace', theme.accent);
       if (pendingText) {
-        r.fillText(pendingText, 120, statusY + 18, '12px monospace', theme.statusBarFg);
+        r.fillText(pendingText, this.width - 260, y, '12px monospace', statusFg);
       }
-      r.fillText(posText, this.width - 60, statusY + 18, '12px monospace', theme.statusBarFg);
     }
 
     // 6. Draw autocomplete popup menu

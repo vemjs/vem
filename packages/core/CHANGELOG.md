@@ -1,5 +1,11 @@
 # @vemjs/core
 
+## 0.1.10
+
+### Patch Changes
+
+- Vim-faithful defaults: `nonumber` is now the default (`:set number`/`nonumber`/`nu`/`nonu` toggle it, joining `rnu`); a `modified` flag + `shouldShowIntro()` gate the intro splash; the default theme matches Vim (near-black bg, grey LineNr, blue NonText, reverse StatusLine) with a new `VemTheme.nonText` color.
+
 ## 0.1.9
 
 ### Patch Changes

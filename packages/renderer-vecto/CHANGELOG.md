@@ -1,5 +1,13 @@
 # @vemjs/renderer-vecto
 
+## 0.1.9
+
+### Patch Changes
+
+- Render like real Vim: `~` NonText markers for empty lines, the centered `:intro` splash on a fresh empty buffer (cleared on first edit), a zero-width gutter when line numbers are off, and a bare last-line ruler (`line,col` / `0,0-1`, plus All/Top/Bot/NN%) with the mode message only shown outside NORMAL. The statusline bar is painted only when a plugin (lualine) supplies one.
+- Updated dependencies
+  - @vemjs/core@0.1.10
+
 ## 0.1.8
 
 ### Patch Changes
