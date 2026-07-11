@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { VemEditorState } from './editor';
 
 describe('VemEditorState', () => {
@@ -564,5 +564,39 @@ describe('search: / prompt, n/N repeat', () => {
     editor.handleKey('Enter');
     expect(editor.statusMessage).toContain('E486');
     expect(editor.getCursor()).toEqual({ line: 0, character: 0 });
+  });
+});
+
+describe('global defaults (vemrc-style config applying to future buffers)', () => {
+  afterEach(() => {
+    // Every test here mutates process-wide static defaults — reset so other
+    // test files (and later tests in this file) see vem's real defaults.
+    VemEditorState.resetDefaults();
+  });
+
+  it('setDefaultLayoutConfig affects states constructed afterwards, not existing ones', () => {
+    const before = new VemEditorState('before');
+    expect(before.layoutConfig.lineNumbers).toBe('none');
+
+    VemEditorState.setDefaultLayoutConfig({ lineNumbers: 'absolute' });
+
+    expect(before.layoutConfig.lineNumbers).toBe('none'); // unaffected retroactively
+    const after = new VemEditorState('after');
+    expect(after.layoutConfig.lineNumbers).toBe('absolute');
+  });
+
+  it('setDefaultTheme affects states constructed afterwards', () => {
+    VemEditorState.setDefaultTheme({ accent: '#ff00ff' });
+    const state = new VemEditorState('x');
+    expect(state.theme.accent).toBe('#ff00ff');
+    // Untouched theme fields still come from the real Vim-default palette.
+    expect(state.theme.bg).toBe('#000000');
+  });
+
+  it('resetDefaults restores the built-in Vim defaults for new states', () => {
+    VemEditorState.setDefaultLayoutConfig({ lineNumbers: 'relative' });
+    VemEditorState.resetDefaults();
+    const state = new VemEditorState('x');
+    expect(state.layoutConfig.lineNumbers).toBe('none');
   });
 });

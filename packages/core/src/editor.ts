@@ -120,9 +120,33 @@ const DEFAULT_LAYOUT_CONFIG: VemLayoutConfig = {
   lineNumbers: 'none',
 };
 
+// Mutable copies backing newly-constructed states. A `.vemrc` sets these
+// (via ConfigLoader) so every buffer opened afterwards — a fresh tab, a
+// split, a file passed on the CLI — inherits it, not just whichever state
+// happened to be active when the config loaded. Vim's vimrc is global in
+// exactly this sense: options apply to windows that don't exist yet.
+let activeDefaultTheme: VemTheme = { ...DEFAULT_THEME };
+let activeDefaultLayoutConfig: VemLayoutConfig = { ...DEFAULT_LAYOUT_CONFIG };
+
 export class VemEditorState {
-  public theme: VemTheme = { ...DEFAULT_THEME };
-  public layoutConfig: VemLayoutConfig = { ...DEFAULT_LAYOUT_CONFIG };
+  /** Change the theme every subsequently-constructed state starts with. */
+  public static setDefaultTheme(theme: Partial<VemTheme>): void {
+    activeDefaultTheme = { ...activeDefaultTheme, ...theme };
+  }
+
+  /** Change the layout config every subsequently-constructed state starts with. */
+  public static setDefaultLayoutConfig(config: Partial<VemLayoutConfig>): void {
+    activeDefaultLayoutConfig = { ...activeDefaultLayoutConfig, ...config };
+  }
+
+  /** Restore the built-in Vim defaults (test isolation; `--clean`/`:set all&`). */
+  public static resetDefaults(): void {
+    activeDefaultTheme = { ...DEFAULT_THEME };
+    activeDefaultLayoutConfig = { ...DEFAULT_LAYOUT_CONFIG };
+  }
+
+  public theme: VemTheme = { ...activeDefaultTheme };
+  public layoutConfig: VemLayoutConfig = { ...activeDefaultLayoutConfig };
   public statuslineLayout: StatuslineLayout = { left: [], right: [] };
   public fileUri: string = 'untitled';
   public activePopup: FloatingPopupConfig | null = null;

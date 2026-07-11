@@ -1,4 +1,4 @@
-import type { VemEditorState } from './editor';
+import { VemEditorState } from './editor';
 
 export interface VemConfig {
   plugins?: any[];
@@ -19,11 +19,16 @@ export class ConfigLoader {
   }
 
   public async loadConfigFromObject(config: VemConfig, registry: any): Promise<void> {
+    // A vemrc's theme/layout are Vim's vimrc-style GLOBAL options: they must
+    // outlive the buffer that happened to be active when the config loaded,
+    // so every future tab/split/CLI-opened file inherits them too.
     if (config.theme) {
+      VemEditorState.setDefaultTheme(config.theme);
       this.editorState.setTheme(config.theme);
     }
 
     if (config.layout) {
+      VemEditorState.setDefaultLayoutConfig(config.layout);
       this.editorState.setLayoutConfig(config.layout);
     }
 

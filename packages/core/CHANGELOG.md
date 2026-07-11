@@ -1,5 +1,17 @@
 # @vemjs/core
 
+## 0.1.13
+
+### Patch Changes
+
+- `ConfigLoader`'s theme/layout are now Vim's vimrc-style global options: they
+  also update `VemEditorState`'s static defaults (`setDefaultTheme`/
+  `setDefaultLayoutConfig`), so a buffer opened AFTER the config loads —
+  another tab, a split, a file passed on a CLI — inherits it too. Previously a
+  vemrc only ever touched the one state that happened to be active when it
+  loaded; every subsequently opened buffer silently reverted to vem's built-in
+  defaults.
+
 ## 0.1.12
 
 ### Patch Changes
