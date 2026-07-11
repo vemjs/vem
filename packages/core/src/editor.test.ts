@@ -343,3 +343,29 @@ describe('macro recording and replay', () => {
     expect(editor.getBuffer().getLine(0)).toBe('q');
   });
 });
+
+describe('Ctrl scroll motions', () => {
+  it('moves the cursor by half and full pages with Ctrl-D/U/F/B', () => {
+    const editor = new VemEditorState(
+      Array.from({ length: 100 }, (_, i) => `line ${i}`).join('\n'),
+    );
+    expect(editor.getCursor().line).toBe(0);
+
+    editor.handleKey('<C-d>');
+    expect(editor.getCursor().line).toBe(15);
+    editor.handleKey('<C-f>');
+    expect(editor.getCursor().line).toBe(45);
+    editor.handleKey('<C-u>');
+    expect(editor.getCursor().line).toBe(30);
+    editor.handleKey('<C-b>');
+    expect(editor.getCursor().line).toBe(0);
+  });
+
+  it('clamps at the buffer edges', () => {
+    const editor = new VemEditorState('a\nb\nc');
+    editor.handleKey('<C-d>');
+    expect(editor.getCursor().line).toBe(2);
+    editor.handleKey('<C-u>');
+    expect(editor.getCursor().line).toBe(0);
+  });
+});

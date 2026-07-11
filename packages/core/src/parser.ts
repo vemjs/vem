@@ -204,6 +204,13 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       'P',
       ':',
       'Escape',
+      // Vim scroll motions (half/full page, single line)
+      '<C-d>',
+      '<C-u>',
+      '<C-f>',
+      '<C-b>',
+      '<C-e>',
+      '<C-y>',
     ];
     if (commands.includes(remNormalStr)) {
       result.command = remNormalStr;

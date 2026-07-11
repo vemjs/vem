@@ -794,8 +794,41 @@ export class VemEditorState {
           this.setMode('COMMAND');
           this.commandText = '';
           break;
+        // Scroll motions. Vim ties these to the window height; with no viewport
+        // coupling here we use fixed line counts that feel like a half/full
+        // screen, so Ctrl-D/U/F/B/E/Y move the cursor instead of the browser
+        // hijacking them (Ctrl-D bookmarks, Ctrl-F finds, …).
+        case '<C-d>':
+          this.moveCursorVertically(this.halfPageLines);
+          break;
+        case '<C-u>':
+          this.moveCursorVertically(-this.halfPageLines);
+          break;
+        case '<C-f>':
+          this.moveCursorVertically(this.halfPageLines * 2);
+          break;
+        case '<C-b>':
+          this.moveCursorVertically(-this.halfPageLines * 2);
+          break;
+        case '<C-e>':
+          this.moveCursorVertically(1);
+          break;
+        case '<C-y>':
+          this.moveCursorVertically(-1);
+          break;
       }
     }
+  }
+
+  /** Approximate half-screen for Ctrl-D/U (no viewport model in core). */
+  private halfPageLines = 15;
+
+  private moveCursorVertically(delta: number): void {
+    const last = this.buffer.getLineCount() - 1;
+    this.cursor.line = Math.max(0, Math.min(last, this.cursor.line + delta));
+    const lineLen = this.buffer.getLine(this.cursor.line).length;
+    const maxChar = this.mode === 'INSERT' ? lineLen : Math.max(0, lineLen - 1);
+    this.cursor.character = Math.min(this.desiredCol, maxChar);
   }
 
   private static globalExCommands: Map<string, (arg: string, state: VemEditorState) => void> =
