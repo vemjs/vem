@@ -122,6 +122,17 @@ export class VemWorkspace extends UIComponent {
     return this.tabsComponent.value;
   }
 
+  /**
+   * Focus a tab by its stable id (e.g. a caller that opened several buffers
+   * in sequence — each open leaves the newest one active — needs to return
+   * to an earlier one, such as Vim's `+<lnum>` applying to the first file
+   * argument regardless of how many were opened after it).
+   */
+  public switchToBuffer(id: string): void {
+    if (!this.buffers.some((b) => b.id === id)) return;
+    this.syncTabs(id);
+  }
+
   /** Rename a tab (e.g. after saving an untitled buffer to a path). */
   public setTabLabel(id: string, label: string): void {
     const entry = this.buffers.find((b) => b.id === id);

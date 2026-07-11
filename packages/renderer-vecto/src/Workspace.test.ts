@@ -236,3 +236,33 @@ describe('WorkspaceExplorer resize propagation', () => {
     expect(inner.workspace.height).toBe(1150);
   });
 });
+
+describe('VemWorkspace.switchToBuffer', () => {
+  const stubScene = (workspace: VemWorkspace) => {
+    Object.defineProperty(workspace, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+  };
+
+  it('focuses an earlier buffer after later ones were opened', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    stubScene(workspace);
+    const first = workspace.getActiveBufferId();
+    workspace.openBuffer('two', 'b');
+    workspace.openBuffer('three', 'c');
+    expect(workspace.getActiveBufferId()).not.toBe(first);
+
+    workspace.switchToBuffer(first);
+    expect(workspace.getActiveBufferId()).toBe(first);
+    expect(workspace.getActiveLayout()).not.toBeNull();
+  });
+
+  it('ignores an unknown id rather than clearing the active tab', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    stubScene(workspace);
+    const first = workspace.getActiveBufferId();
+    workspace.switchToBuffer('not-a-real-id');
+    expect(workspace.getActiveBufferId()).toBe(first);
+  });
+});

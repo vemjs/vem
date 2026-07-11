@@ -1,5 +1,14 @@
 # @vemjs/renderer-vecto
 
+## 0.1.14
+
+### Patch Changes
+
+- Add `VemWorkspace.switchToBuffer(id)` — focus an earlier tab after later ones
+  were opened. Needed by any host that opens multiple files in sequence and
+  wants control over which one ends up active (e.g. a CLI's `+<lnum>` applying
+  to the first file argument regardless of open order).
+
 ## 0.1.13
 
 ### Patch Changes
