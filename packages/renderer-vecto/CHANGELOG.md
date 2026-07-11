@@ -1,5 +1,13 @@
 # @vemjs/renderer-vecto
 
+## 0.1.10
+
+### Patch Changes
+
+- Mouse text selection, Vim `mouse=a` style: dragging in the editor starts a charwise Visual selection anchored at the press cell, the active end follows the pointer, and the selection survives release; a plain click in Visual mode leaves Visual and just moves the cursor. Upgrades to `@vectojs/core` 1.4 / `@vectojs/ui` 1.6 and drops the manual `detachA11y` calls the framework now performs on `Entity.remove()` (also fixing a closed tab's layout lingering as a hidden child of the tab strip).
+- Updated dependencies
+  - @vemjs/core@0.1.11
+
 ## 0.1.9
 
 ### Patch Changes

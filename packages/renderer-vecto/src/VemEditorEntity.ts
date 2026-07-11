@@ -13,6 +13,10 @@ export class VemEditorEntity extends UIComponent {
   private autocompleteItems: { label: string; detail?: string }[] = [];
   private selectedAutocompleteIndex = 0;
   private isFocused = false;
+  // Mouse selection (Vim mouse=a): the buffer cell the button went down on,
+  // null when no button is held; dragSelected guards the trailing click.
+  private dragOrigin: { line: number; character: number } | null = null;
+  private dragSelected = false;
 
   // Monospace fonts stack supporting premium programming ligatures.
   // Editor text is drawn directly on a fixed character grid (charWidth ×
@@ -143,6 +147,20 @@ export class VemEditorEntity extends UIComponent {
       this.scene?.markDirty();
     });
 
+    // Pointer → buffer cell on the monospace grid (shared by click + drag).
+    const cellAt = (localX: number, localY: number) => {
+      const layout = this.editorState.layoutConfig;
+      const contentOffsetY = layout.statusBarPosition === 'top' ? 30 : 0;
+      const gutterWidth = this.gutterWidth();
+
+      const relativeY = localY - contentOffsetY + this.scrollY * this.lineHeight - 5;
+      const line = Math.floor(relativeY / this.lineHeight);
+
+      const relativeX = localX - gutterWidth - 5;
+      const character = Math.round(relativeX / this.charWidth);
+      return { line, character };
+    };
+
     const handlePointerClick = (e: any) => {
       const inputEl = this.scene?.getA11yElement(this.id);
       if (inputEl) {
@@ -153,24 +171,21 @@ export class VemEditorEntity extends UIComponent {
       const localY = e.localY;
       if (localX === undefined || localY === undefined) return;
 
-      const layout = this.editorState.layoutConfig;
-      const contentOffsetY = layout.statusBarPosition === 'top' ? 30 : 0;
+      const cell = cellAt(localX, localY);
 
-      const gutterWidth = this.gutterWidth();
-
-      const relativeY = localY - contentOffsetY + this.scrollY * this.lineHeight - 5;
-      const clickedLine = Math.floor(relativeY / this.lineHeight);
-
-      const relativeX = localX - gutterWidth - 5;
-      const clickedChar = Math.round(relativeX / this.charWidth);
-
-      this.editorState.setCursor(clickedLine, clickedChar);
+      // Vim mouse=a: a plain left click in Visual mode leaves Visual and just
+      // moves the cursor; only a drag (below) creates a selection.
+      if (this.editorState.getMode() === 'VISUAL') {
+        this.editorState.setMode('NORMAL');
+      }
+      this.editorState.setCursor(cell.line, cell.character);
+      this.dragOrigin = cell;
       if (typeof window !== 'undefined') {
         (window as any).lastPointerCoords = {
           localX,
           localY,
-          clickedLine,
-          clickedChar,
+          clickedLine: cell.line,
+          clickedChar: cell.character,
           id: this.id,
         };
       }
@@ -178,8 +193,57 @@ export class VemEditorEntity extends UIComponent {
       this.scene?.markDirty();
     };
 
-    this.on('pointerdown', handlePointerClick);
-    this.on('click', handlePointerClick);
+    this.on('pointerdown', (e: any) => {
+      // A fresh press always starts clean; any previous drag's trailing-click
+      // guard is stale by now.
+      this.dragSelected = false;
+      handlePointerClick(e);
+    });
+    this.on('click', (e: any) => {
+      // A drag that just selected text emits a trailing 'click' at the release
+      // point — placing the cursor there would collapse the fresh selection.
+      if (this.dragSelected) {
+        this.dragSelected = false;
+        return;
+      }
+      handlePointerClick(e);
+    });
+
+    // Vim mouse=a drag: leaving the press cell with the button held starts a
+    // charwise Visual selection anchored at the press cell; the active end
+    // follows the pointer and the selection survives release (stay in VISUAL).
+    this.on('pointermove', (e: any) => {
+      if (!this.dragOrigin) return;
+      // The release can happen outside the entity (no pointerup for us) — a
+      // move reporting no pressed buttons means the drag already ended.
+      if (e.nativeEvent && e.nativeEvent.buttons === 0) {
+        this.dragOrigin = null;
+        return;
+      }
+      if (e.localX === undefined || e.localY === undefined) return;
+      const cell = cellAt(e.localX, e.localY);
+
+      const state = this.editorState;
+      if (state.getMode() !== 'VISUAL') {
+        if (cell.line === this.dragOrigin.line && cell.character === this.dragOrigin.character) {
+          return; // still inside the press cell — not a drag yet
+        }
+        // Anchor at the press cell: pointerdown already put the cursor there,
+        // and entering VISUAL snapshots the cursor as the anchor.
+        state.setMode('VISUAL');
+        this.dragSelected = true;
+      }
+      state.setCursor(cell.line, cell.character);
+      this.updateFromState();
+      this.scene?.markDirty();
+    });
+
+    // No pointerleave→end: aborting when the cursor briefly outruns the entity
+    // edge mid-selection is the drag-lag bug @vectojs/ui's ResizablePanel fixed;
+    // the buttons===0 check above catches releases that happen outside.
+    this.on('pointerup', () => {
+      this.dragOrigin = null;
+    });
 
     this.updateFromState();
   }
@@ -269,8 +333,7 @@ export class VemEditorEntity extends UIComponent {
       this.commandBar.syncFromState();
     } else {
       if (this.children.includes(this.commandBar)) {
-        this.scene?.detachA11y(this.commandBar);
-        this.remove(this.commandBar);
+        this.remove(this.commandBar); // remove() detaches its a11y node itself
       }
     }
 

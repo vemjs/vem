@@ -397,3 +397,24 @@ describe('Vim intro screen gating', () => {
     expect(editor.shouldShowIntro()).toBe(false);
   });
 });
+
+describe('pointer-driven visual selection', () => {
+  it('setCursor extends the active end while in VISUAL mode', () => {
+    const editor = new VemEditorState('alpha\nbravo\ncharlie');
+    editor.setCursor(0, 1);
+    editor.handleKey('v');
+
+    editor.setCursor(2, 3);
+    const sel = editor.getVisualSelection();
+    expect(sel).not.toBeNull();
+    expect(sel!.anchor).toEqual({ line: 0, character: 1 });
+    expect(sel!.active).toEqual({ line: 2, character: 3 });
+    expect(editor.getCursor()).toEqual({ line: 2, character: 3 });
+  });
+
+  it('setCursor outside VISUAL mode does not create a selection', () => {
+    const editor = new VemEditorState('alpha\nbravo');
+    editor.setCursor(1, 2);
+    expect(editor.getVisualSelection()).toBeNull();
+  });
+});

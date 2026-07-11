@@ -1,5 +1,11 @@
 # @vemjs/core
 
+## 0.1.11
+
+### Patch Changes
+
+- Vim `mouse=a` groundwork: `setCursor` now extends the visual selection's active end while in VISUAL mode (the cursor is the active end in Vim), so pointer-driven cursor placement behaves like a motion.
+
 ## 0.1.10
 
 ### Patch Changes

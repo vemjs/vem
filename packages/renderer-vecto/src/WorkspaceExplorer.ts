@@ -157,8 +157,7 @@ export class WorkspaceExplorer extends UIComponent {
         },
       });
 
-      this.scene?.detachA11y(this.openBtn);
-      this.leftPanel.remove(this.openBtn);
+      this.leftPanel.remove(this.openBtn); // remove() detaches a11y itself
       this.leftPanel.add(this.treeView);
 
       // Trigger directory opened callbacks
@@ -228,8 +227,7 @@ export class WorkspaceExplorer extends UIComponent {
   public syncLayout(activeState: any): void {
     const layout = activeState.layoutConfig;
 
-    this.scene?.detachA11y(this.panelGroup);
-    this.remove(this.panelGroup);
+    this.remove(this.panelGroup); // remove() detaches the a11y subtree itself
 
     this.panelGroup = new PanelGroup({
       direction: 'horizontal',

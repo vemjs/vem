@@ -186,7 +186,7 @@ export class WorkspaceLayout extends UIComponent {
 
   public rebuildLayout(): void {
     if (this.layoutRoot) {
-      this.scene?.detachA11y(this.layoutRoot);
+      // remove() also detaches the subtree's a11y nodes (@vectojs/core >= 1.2).
       this.remove(this.layoutRoot);
     }
 

@@ -415,6 +415,11 @@ export class VemEditorState {
 
     this.cursor = { line: targetLine, character: targetChar };
     this.desiredCol = targetChar;
+    // In Visual mode the cursor IS the selection's active end (Vim semantics);
+    // pointer-driven cursor placement must extend the selection like motions do.
+    if (this.mode === 'VISUAL' && this.visualSelection) {
+      this.visualSelection.active = { ...this.cursor };
+    }
     this.triggerChange();
   }
 

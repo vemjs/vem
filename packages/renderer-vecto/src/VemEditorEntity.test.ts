@@ -275,3 +275,79 @@ describe('VemEditorEntity grid rendering', () => {
     expect(texts.some((t) => t.text === '0,0-1')).toBe(true);
   });
 });
+
+describe('VemEditorEntity mouse selection (Vim mouse=a)', () => {
+  const makeEntity = () => {
+    const state = new VemEditorState('alpha\nbravo');
+    const entity = new VemEditorEntity(state);
+    Object.defineProperty(entity, 'scene', {
+      configurable: true,
+      value: {
+        getA11yElement: () => ({ focus() {} }),
+        markDirty() {},
+      },
+    });
+    return { state, entity };
+  };
+
+  // nonumber default => zero-width gutter: x = 5 + char*8.4, y = 5 + line*21.
+  const at = (line: number, char: number) => ({
+    localX: 5 + char * 8.4,
+    localY: 12 + line * 21,
+  });
+
+  it('drag starts a charwise VISUAL selection anchored at the press cell', () => {
+    const { state, entity } = makeEntity();
+
+    entity.emit('pointerdown', at(0, 0));
+    expect(state.getCursor()).toEqual({ line: 0, character: 0 });
+    expect(state.getMode()).toBe('NORMAL');
+
+    entity.emit('pointermove', { ...at(1, 2), nativeEvent: { buttons: 1 } });
+    expect(state.getMode()).toBe('VISUAL');
+    const sel = state.getVisualSelection();
+    expect(sel!.type).toBe('char');
+    expect(sel!.anchor).toEqual({ line: 0, character: 0 });
+    expect(sel!.active).toEqual({ line: 1, character: 2 });
+
+    // Selection survives release AND the trailing click at the release point.
+    entity.emit('pointerup', {});
+    entity.emit('click', at(1, 2));
+    expect(state.getMode()).toBe('VISUAL');
+    expect(state.getVisualSelection()!.anchor).toEqual({ line: 0, character: 0 });
+  });
+
+  it('a plain click in VISUAL mode leaves Visual and moves the cursor', () => {
+    const { state, entity } = makeEntity();
+    entity.emit('pointerdown', at(0, 0));
+    entity.emit('pointermove', { ...at(1, 2), nativeEvent: { buttons: 1 } });
+    entity.emit('pointerup', {});
+    entity.emit('click', at(1, 2)); // trailing click, swallowed
+    expect(state.getMode()).toBe('VISUAL');
+
+    entity.emit('pointerdown', at(0, 3));
+    expect(state.getMode()).toBe('NORMAL');
+    expect(state.getVisualSelection()).toBeNull();
+    expect(state.getCursor()).toEqual({ line: 0, character: 3 });
+  });
+
+  it('a move without pressed buttons ends a stale drag instead of selecting', () => {
+    const { state, entity } = makeEntity();
+    entity.emit('pointerdown', at(0, 0));
+    // Button was released outside the entity: buttons reports 0.
+    entity.emit('pointermove', { ...at(1, 2), nativeEvent: { buttons: 0 } });
+    expect(state.getMode()).toBe('NORMAL');
+    expect(state.getVisualSelection()).toBeNull();
+    // And later hover-moves never extend anything either.
+    entity.emit('pointermove', { ...at(1, 4), nativeEvent: { buttons: 0 } });
+    expect(state.getMode()).toBe('NORMAL');
+  });
+
+  it('wiggling inside the press cell does not enter VISUAL', () => {
+    const { state, entity } = makeEntity();
+    entity.emit('pointerdown', at(0, 2));
+    entity.emit('pointermove', { ...at(0, 2), nativeEvent: { buttons: 1 } });
+    expect(state.getMode()).toBe('NORMAL');
+    expect(state.getVisualSelection()).toBeNull();
+  });
+});

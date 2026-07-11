@@ -36,7 +36,6 @@ export class VemWorkspace extends UIComponent {
       closable: true,
       tabs: this.buffers.map((b) => ({ id: b.id, label: b.label, content: b.layout })),
       value: first.id,
-      onChange: () => this.detachInactiveLayouts(),
       onClose: (id: string) => this.closeTab(id),
     });
 
@@ -64,15 +63,6 @@ export class VemWorkspace extends UIComponent {
     this.scene?.markDirty();
   }
 
-  private detachInactiveLayouts(): void {
-    const activeLayout = this.getActiveLayout();
-    for (const b of this.buffers) {
-      if (b.layout !== activeLayout) {
-        this.scene?.detachA11y(b.layout);
-      }
-    }
-  }
-
   /**
    * Open a new buffer in its own tab and focus it. Returns the stable tab id
    * so the caller can associate it with a file handle for save-back.
@@ -97,7 +87,10 @@ export class VemWorkspace extends UIComponent {
     const idx = this.buffers.findIndex((b) => b.id === id);
     if (idx === -1) return;
     const [removed] = this.buffers.splice(idx, 1);
-    this.scene?.detachA11y(removed.layout);
+    // Tabs only manages content for tabs still in its list — a closed tab's
+    // layout would linger as a hidden child. remove() also detaches its a11y
+    // subtree (@vectojs/core >= 1.2 does that automatically on removal).
+    this.tabsComponent.remove(removed.layout);
 
     if (this.buffers.length === 0) {
       const fresh = this.makeBuffer('', 'untitled');
