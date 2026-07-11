@@ -1,6 +1,6 @@
 {
   "name": "@vemjs/renderer-vecto",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "VectoUI integration renderer for the Vem text editor",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,8 +12,8 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@vectojs/core": "^1.4.0",
-    "@vectojs/ui": "^1.6.1",
+    "@vectojs/core": "^1.5.0",
+    "@vectojs/ui": "^1.7.1",
     "@vemjs/core": "^0.1.11"
   },
   "publishConfig": {

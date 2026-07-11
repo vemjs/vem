@@ -1,5 +1,13 @@
 # @vemjs/renderer-vecto
 
+## 0.1.11
+
+### Patch Changes
+
+- Upgrade to `@vectojs/core` ^1.5.0 / `@vectojs/ui` ^1.7.1 — picks up the generalized
+  browser-native selectable-text contract (VMT-ordered content projections, subtree
+  removal, clipping-aware hiding) and selection-fidelity fixes from 1.4.1/1.6.2.
+
 ## 0.1.10
 
 ### Patch Changes
