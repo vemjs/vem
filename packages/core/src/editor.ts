@@ -1,6 +1,15 @@
 import type { Position, EditorMode } from './index';
 import { VimBuffer, UndoManager } from './buffer';
-import { getWordForward, getWordBackward, getWordEndForward, getTextObjectRange } from './motions';
+import {
+  getWordForward,
+  getWordBackward,
+  getWordEndForward,
+  getWORDForward,
+  getWORDBackward,
+  getWORDEndForward,
+  getMatchingBracket,
+  getTextObjectRange,
+} from './motions';
 import { parseKeys } from './parser';
 import type { ParsedCommand } from './parser';
 
@@ -133,6 +142,9 @@ export class VemEditorState {
   private isInsertMutated = false;
   private changeCallbacks: (() => void)[] = [];
   private commandText = '';
+  private commandPrefix: ':' | '/' = ':';
+  private lastSearch = '';
+  private lastSearchDir: 1 | -1 = 1;
   /** Transient one-line status feedback (e.g. unknown ex-command). Cleared on the next key. */
   public statusMessage = '';
   private exCommands: Map<string, (arg: string) => void> = new Map();
@@ -443,6 +455,11 @@ export class VemEditorState {
     return this.commandText;
   }
 
+  /** `:` for ex commands, `/` for search — what the command line should show. */
+  public getCommandPrefix(): ':' | '/' {
+    return this.commandPrefix;
+  }
+
   public setCommandText(text: string): void {
     if (this.commandText === text) return;
     this.commandText = text;
@@ -539,13 +556,19 @@ export class VemEditorState {
       if (key === 'Escape') {
         this.setMode('NORMAL');
         this.commandText = '';
+        this.commandPrefix = ':';
         this.triggerChange();
         return;
       }
       if (key === 'Enter') {
-        this.executeCommandLineText(this.commandText);
+        if (this.commandPrefix === '/') {
+          this.performSearch(this.commandText, 1);
+        } else {
+          this.executeCommandLineText(this.commandText);
+        }
         this.setMode('NORMAL');
         this.commandText = '';
+        this.commandPrefix = ':';
         this.triggerChange();
         return;
       }
@@ -555,6 +578,7 @@ export class VemEditorState {
         // gets you out.
         if (this.commandText.length === 0) {
           this.setMode('NORMAL');
+          this.commandPrefix = ':';
           this.triggerChange();
           return;
         }
@@ -774,6 +798,69 @@ export class VemEditorState {
           this.saveStateForUndo();
           this.deleteCharUnderCursor(cmd.count);
           break;
+        case 'X': {
+          const from = Math.max(0, this.cursor.character - cmd.count);
+          if (from < this.cursor.character) {
+            this.saveStateForUndo();
+            const line = this.buffer.getLine(this.cursor.line);
+            this.register = {
+              text: line.substring(from, this.cursor.character),
+              type: 'char',
+            };
+            this.buffer.setLine(
+              this.cursor.line,
+              line.substring(0, from) + line.substring(this.cursor.character),
+            );
+            this.cursor.character = from;
+            this.desiredCol = from;
+          }
+          break;
+        }
+        case 'D':
+          this.saveStateForUndo();
+          this.deleteToEndOfLine();
+          break;
+        case 'C':
+          this.saveStateForUndo();
+          this.deleteToEndOfLine(true);
+          this.setMode('INSERT');
+          break;
+        case 'Y': {
+          const endLine = Math.min(
+            this.buffer.getLineCount() - 1,
+            this.cursor.line + cmd.count - 1,
+          );
+          const lines: string[] = [];
+          for (let l = this.cursor.line; l <= endLine; l++) lines.push(this.buffer.getLine(l));
+          this.register = { text: lines.join('\n') + '\n', type: 'line' };
+          break;
+        }
+        case 's': {
+          this.saveStateForUndo();
+          this.deleteCharUnderCursor(cmd.count);
+          this.setMode('INSERT');
+          break;
+        }
+        case 'S': {
+          this.saveStateForUndo();
+          this.register = { text: this.buffer.getLine(this.cursor.line) + '\n', type: 'line' };
+          this.buffer.setLine(this.cursor.line, '');
+          this.cursor.character = 0;
+          this.desiredCol = 0;
+          this.setMode('INSERT');
+          break;
+        }
+        case '/':
+          this.setMode('COMMAND');
+          this.commandText = '';
+          this.commandPrefix = '/';
+          break;
+        case 'n':
+          this.repeatSearch(1);
+          break;
+        case 'N':
+          this.repeatSearch(-1);
+          break;
         case 'u':
           this.undo();
           break;
@@ -986,6 +1073,33 @@ export class VemEditorState {
           this.cursor = getWordEndForward(this.buffer, this.cursor);
           this.desiredCol = this.cursor.character;
           break;
+        case 'W':
+          this.cursor = getWORDForward(this.buffer, this.cursor);
+          this.desiredCol = this.cursor.character;
+          break;
+        case 'B':
+          this.cursor = getWORDBackward(this.buffer, this.cursor);
+          this.desiredCol = this.cursor.character;
+          break;
+        case 'E':
+          this.cursor = getWORDEndForward(this.buffer, this.cursor);
+          this.desiredCol = this.cursor.character;
+          break;
+        case '%': {
+          const match = getMatchingBracket(this.buffer, this.cursor);
+          if (match) {
+            this.cursor = match;
+            this.desiredCol = match.character;
+          }
+          break;
+        }
+        case '^': {
+          const text = this.buffer.getLine(this.cursor.line);
+          const first = text.search(/\S/);
+          this.cursor.character = first === -1 ? 0 : first;
+          this.desiredCol = this.cursor.character;
+          break;
+        }
         case '0':
           this.cursor.character = 0;
           this.desiredCol = 0;
@@ -1102,7 +1216,14 @@ export class VemEditorState {
       // Inclusive vs Exclusive: motions like $ or text objects are inclusive. Others are exclusive.
       // E.g. 'dw' deletes from start to start of next word (exclusive).
       // 'd$' deletes to end of line (inclusive).
-      let isInclusive = cmd.textObject !== undefined || cmd.motion === '$';
+      // e/E land ON the word's last char and % ON the matching bracket, so the
+      // operated range includes that character, exactly like d$ (:help inclusive).
+      let isInclusive =
+        cmd.textObject !== undefined ||
+        cmd.motion === '$' ||
+        cmd.motion === 'e' ||
+        cmd.motion === 'E' ||
+        cmd.motion === '%';
 
       const startLineText = this.buffer.getLine(s.line);
       const endLineText = this.buffer.getLine(e.line);
@@ -1253,6 +1374,73 @@ export class VemEditorState {
     const lineLen = this.buffer.getLine(this.cursor.line).length;
     this.cursor.character = lineLen;
     this.desiredCol = Infinity;
+  }
+
+  /** Vim's D / C: kill from the cursor to end of line (charwise register). */
+  private deleteToEndOfLine(keepCursorForInsert = false): void {
+    const line = this.buffer.getLine(this.cursor.line);
+    if (this.cursor.character >= line.length) return;
+    this.register = { text: line.substring(this.cursor.character), type: 'char' };
+    this.buffer.setLine(this.cursor.line, line.substring(0, this.cursor.character));
+    if (!keepCursorForInsert) {
+      this.cursor.character = Math.max(0, this.cursor.character - 1);
+    }
+    this.desiredCol = this.cursor.character;
+  }
+
+  /**
+   * Literal (non-regex) search with wrapscan, matching Vim's default UX for
+   * plain patterns. `dir` 1 searches forward from just after the cursor,
+   * -1 backward from just before it.
+   */
+  private performSearch(query: string, dir: 1 | -1): void {
+    const q = query || this.lastSearch;
+    if (!q) return;
+    this.lastSearch = q;
+    this.lastSearchDir = dir;
+    this.jumpToMatch(q, dir);
+  }
+
+  private repeatSearch(mult: 1 | -1): void {
+    if (!this.lastSearch) return;
+    this.jumpToMatch(this.lastSearch, (this.lastSearchDir * mult) as 1 | -1);
+  }
+
+  private jumpToMatch(q: string, dir: 1 | -1): void {
+    const lineCount = this.buffer.getLineCount();
+    const move = (line: number, character: number) => {
+      this.cursor = { line, character };
+      this.desiredCol = character;
+    };
+
+    if (dir === 1) {
+      for (let offset = 0; offset <= lineCount; offset++) {
+        const l = (this.cursor.line + offset) % lineCount;
+        const text = this.buffer.getLine(l);
+        const from = offset === 0 ? this.cursor.character + 1 : 0;
+        const idx = text.indexOf(q, from);
+        if (idx !== -1) {
+          // On the wrapped-around visit of the cursor line, any match counts.
+          if (offset === lineCount && idx > this.cursor.character) break;
+          move(l, idx);
+          return;
+        }
+      }
+    } else {
+      for (let offset = 0; offset <= lineCount; offset++) {
+        const l = (this.cursor.line - offset + lineCount * 2) % lineCount;
+        const text = this.buffer.getLine(l);
+        const upTo = offset === 0 ? this.cursor.character - 1 : text.length;
+        if (upTo >= 0) {
+          const idx = text.lastIndexOf(q, upTo);
+          if (idx !== -1 && (offset !== 0 || idx < this.cursor.character)) {
+            move(l, idx);
+            return;
+          }
+        }
+      }
+    }
+    this.statusMessage = `E486: Pattern not found: ${q}`;
   }
 
   private deleteCharUnderCursor(count: number): void {

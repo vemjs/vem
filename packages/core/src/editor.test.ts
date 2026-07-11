@@ -418,3 +418,151 @@ describe('pointer-driven visual selection', () => {
     expect(editor.getVisualSelection()).toBeNull();
   });
 });
+
+describe('uppercase operators and WORD motions (Vim basics)', () => {
+  const type = (editor: VemEditorState, keys: string) => {
+    for (const k of keys) editor.handleKey(k);
+  };
+
+  it('D deletes from cursor to end of line', () => {
+    const editor = new VemEditorState('hello world');
+    editor.setCursor(0, 5);
+    editor.handleKey('D');
+    expect(editor.getBuffer().getLine(0)).toBe('hello');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 4 });
+    expect(editor.getRegister()?.text).toBe(' world');
+  });
+
+  it('C deletes to end of line and enters INSERT', () => {
+    const editor = new VemEditorState('hello world');
+    editor.setCursor(0, 6);
+    editor.handleKey('C');
+    expect(editor.getBuffer().getLine(0)).toBe('hello ');
+    expect(editor.getMode()).toBe('INSERT');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 6 });
+  });
+
+  it('Y yanks the current line linewise without moving', () => {
+    const editor = new VemEditorState('alpha\nbravo');
+    editor.setCursor(1, 3);
+    editor.handleKey('Y');
+    expect(editor.getRegister()).toEqual({ text: 'bravo\n', type: 'line' });
+    expect(editor.getBuffer().getLine(1)).toBe('bravo');
+    expect(editor.getCursor()).toEqual({ line: 1, character: 3 });
+  });
+
+  it('X deletes the character before the cursor', () => {
+    const editor = new VemEditorState('abcd');
+    editor.setCursor(0, 2);
+    editor.handleKey('X');
+    expect(editor.getBuffer().getLine(0)).toBe('acd');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 1 });
+  });
+
+  it('s substitutes the char under the cursor and enters INSERT', () => {
+    const editor = new VemEditorState('abc');
+    editor.setCursor(0, 1);
+    editor.handleKey('s');
+    expect(editor.getBuffer().getLine(0)).toBe('ac');
+    expect(editor.getMode()).toBe('INSERT');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 1 });
+  });
+
+  it('S changes the whole line (like cc)', () => {
+    const editor = new VemEditorState('alpha\nbravo');
+    editor.setCursor(0, 3);
+    editor.handleKey('S');
+    expect(editor.getBuffer().getLine(0)).toBe('');
+    expect(editor.getBuffer().getLine(1)).toBe('bravo');
+    expect(editor.getMode()).toBe('INSERT');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 0 });
+  });
+
+  it('W/B/E treat punctuation as part of a WORD', () => {
+    const editor = new VemEditorState('foo.bar baz-qux end');
+    editor.setCursor(0, 0);
+    editor.handleKey('W'); // to 'baz-qux'
+    expect(editor.getCursor()).toEqual({ line: 0, character: 8 });
+    editor.handleKey('E'); // end of 'baz-qux'
+    expect(editor.getCursor()).toEqual({ line: 0, character: 14 });
+    editor.handleKey('B'); // back to start of 'baz-qux'
+    expect(editor.getCursor()).toEqual({ line: 0, character: 8 });
+  });
+
+  it('dW deletes a whole WORD including punctuation', () => {
+    const editor = new VemEditorState('foo.bar baz');
+    editor.setCursor(0, 0);
+    type(editor, 'dW');
+    expect(editor.getBuffer().getLine(0)).toBe('baz');
+  });
+
+  it('^ moves to the first non-blank character', () => {
+    const editor = new VemEditorState('    indented');
+    editor.setCursor(0, 9);
+    editor.handleKey('^');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 4 });
+  });
+
+  it('% jumps between matching brackets (nested, multiline)', () => {
+    const editor = new VemEditorState('fn(a, (b))\n{\n  body\n}');
+    editor.setCursor(0, 2);
+    editor.handleKey('%');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 9 });
+    editor.handleKey('%');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 2 });
+    // From a non-bracket char, % uses the first bracket on the line after the cursor.
+    editor.setCursor(1, 0);
+    editor.handleKey('%');
+    expect(editor.getCursor()).toEqual({ line: 3, character: 0 });
+  });
+});
+
+describe('search: / prompt, n/N repeat', () => {
+  const type = (editor: VemEditorState, keys: string) => {
+    for (const k of keys) editor.handleKey(k);
+  };
+
+  it('/ opens the command line with a / prefix', () => {
+    const editor = new VemEditorState('hello');
+    editor.handleKey('/');
+    expect(editor.getMode()).toBe('COMMAND');
+    expect(editor.getCommandPrefix()).toBe('/');
+    editor.handleKey('Escape');
+    expect(editor.getMode()).toBe('NORMAL');
+    editor.handleKey(':');
+    expect(editor.getCommandPrefix()).toBe(':');
+  });
+
+  it('searches forward, wraps, and repeats with n/N', () => {
+    const editor = new VemEditorState('alpha\nneedle one\nplain\nneedle two');
+    editor.setCursor(0, 0);
+    type(editor, '/needle');
+    editor.handleKey('Enter');
+    expect(editor.getMode()).toBe('NORMAL');
+    expect(editor.getCursor()).toEqual({ line: 1, character: 0 });
+    editor.handleKey('n');
+    expect(editor.getCursor()).toEqual({ line: 3, character: 0 });
+    editor.handleKey('n'); // wraps to the first match
+    expect(editor.getCursor()).toEqual({ line: 1, character: 0 });
+    editor.handleKey('N'); // reverse wraps back
+    expect(editor.getCursor()).toEqual({ line: 3, character: 0 });
+  });
+
+  it('finds later matches on the same line', () => {
+    const editor = new VemEditorState('ab ab ab');
+    editor.setCursor(0, 0);
+    type(editor, '/ab');
+    editor.handleKey('Enter');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 3 });
+    editor.handleKey('n');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 6 });
+  });
+
+  it('reports E486 when the pattern is missing', () => {
+    const editor = new VemEditorState('hello');
+    type(editor, '/nope');
+    editor.handleKey('Enter');
+    expect(editor.statusMessage).toContain('E486');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 0 });
+  });
+});

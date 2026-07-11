@@ -1,5 +1,26 @@
 # @vemjs/core
 
+## 0.1.12
+
+### Patch Changes
+
+- Vim-fidelity pass:
+
+  - **core**: uppercase operators/motions (`D`, `C`, `Y`, `X`, `s`, `S`, `W`/`B`/`E`
+    WORD motions, `^`, `%` bracket matching), a `/` search prompt with
+    wrapscan `n`/`N` repeat.
+  - **renderer-vecto**: command-line bar now uses the editor background (not the
+    StatusLine highlight) and the `:`/`/` prefix sits flush against the typed
+    text; exactly one pane is ever the "current window" (clicking a pane, or a
+    fresh `:sp`/`:vsp`/`:help` split, updates both keyboard routing and which
+    cursor renders solid — previously every split left every pane's cursor
+    hollow until clicked); the INSERT-mode cursor is always a thin vertical bar
+    regardless of focus, matching GUI Vim; Ctrl-D/U/F/B/E/Y/O now translate and
+    preventDefault correctly on a pane's own a11y textarea (previously only the
+    window-level router had the full table, so these leaked to the browser
+    once a pane itself had focus); mouse wheel scrolls the viewport 3 lines per
+    notch without moving the cursor (Vim's `mousescroll` default).
+
 ## 0.1.11
 
 ### Patch Changes

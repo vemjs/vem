@@ -2,6 +2,10 @@ import { UIComponent } from '@vectojs/ui';
 import type { IRenderer } from '@vectojs/core';
 import type { VemEditorState } from '@vemjs/core';
 import { CommandBar } from './CommandBar';
+import { CTRL_VIM_KEYS, PREVENT_CTRL_KEYS } from './vimKeys';
+
+/** Vim's 'mousescroll' default (`ver:3`) — lines scrolled per wheel notch. */
+const WHEEL_LINES_PER_NOTCH = 3;
 
 export class VemEditorEntity extends UIComponent {
   private editorState: VemEditorState;
@@ -13,6 +17,17 @@ export class VemEditorEntity extends UIComponent {
   private autocompleteItems: { label: string; detail?: string }[] = [];
   private selectedAutocompleteIndex = 0;
   private isFocused = false;
+  // Whether the owning WorkspaceLayout considers this pane Vim's "current
+  // window". Rendering a solid cursor needs this in addition to raw DOM
+  // focus: a `:sp`/`:vsp`/`:help` split rebuilds every pane's a11y element
+  // from scratch (WorkspaceLayout.rebuildLayout), so neither the surviving
+  // nor the new pane has DOM focus until the user clicks — without this flag
+  // both cursors render hollow and it's ambiguous which window is active.
+  // Standalone embeddings with no WorkspaceLayout (VectoRenderer) never set
+  // this, so they keep the old DOM-focus-only behavior.
+  public isActivePane = false;
+  /** Called when the user clicks into this pane — see `isActivePane`. */
+  private onActivate?: () => void;
   // Mouse selection (Vim mouse=a): the buffer cell the button went down on,
   // null when no button is held; dragSelected guards the trailing click.
   private dragOrigin: { line: number; character: number } | null = null;
@@ -26,9 +41,10 @@ export class VemEditorEntity extends UIComponent {
   private readonly editorFont =
     '14px "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, Monaco, monospace';
 
-  constructor(editorState: VemEditorState) {
+  constructor(editorState: VemEditorState, onActivate?: () => void) {
     super();
     this.editorState = editorState;
+    this.onActivate = onActivate;
     this.width = 800;
     this.height = 600;
     this.clipChildren = true;
@@ -113,10 +129,22 @@ export class VemEditorEntity extends UIComponent {
         return;
       }
 
+      const ctrl = keyboardEvent.ctrlKey || keyboardEvent.metaKey;
       let feedKey = key;
-      if (keyboardEvent.ctrlKey) {
-        if (key === 'r') feedKey = '<C-r>';
-        else if (key === 'v') feedKey = '<C-v>';
+      let ctrlOwnedByEditor = false;
+      if (ctrl) {
+        const lower = key.toLowerCase();
+        const vimKey = CTRL_VIM_KEYS[lower];
+        if (vimKey) {
+          feedKey = vimKey;
+          ctrlOwnedByEditor = true;
+        } else if (PREVENT_CTRL_KEYS.has(lower)) {
+          ctrlOwnedByEditor = true;
+        } else {
+          // Not a combo this editor owns (Ctrl-A/Ctrl-C/devtools/…) — let it
+          // through rather than eating every Ctrl-key the browser handles.
+          return;
+        }
       }
 
       const keysToPrevent = [
@@ -129,7 +157,7 @@ export class VemEditorEntity extends UIComponent {
         'Escape',
         ' ',
       ];
-      if (keysToPrevent.includes(key) || (keyboardEvent.ctrlKey && (key === 'r' || key === 'v'))) {
+      if (keysToPrevent.includes(key) || ctrlOwnedByEditor) {
         keyboardEvent.preventDefault();
       }
 
@@ -197,6 +225,10 @@ export class VemEditorEntity extends UIComponent {
       // A fresh press always starts clean; any previous drag's trailing-click
       // guard is stale by now.
       this.dragSelected = false;
+      // Vim: clicking a window makes it the current window. The owning
+      // WorkspaceLayout passes this callback in to move keyboard routing
+      // (and the active-pane cursor highlight) to whichever pane was clicked.
+      this.onActivate?.();
       handlePointerClick(e);
     });
     this.on('click', (e: any) => {
@@ -243,6 +275,23 @@ export class VemEditorEntity extends UIComponent {
     // the buttons===0 check above catches releases that happen outside.
     this.on('pointerup', () => {
       this.dragOrigin = null;
+    });
+
+    // Vim mouse=a: the wheel scrolls the viewport (like <C-e>/<C-y>) without
+    // moving the cursor — 3 lines per notch is Vim's 'mousescroll' default.
+    // Deliberately skips updateFromState()'s scroll-to-cursor clamp so the
+    // view can move away from the cursor line, exactly like real Vim.
+    this.on('wheel', (e: any) => {
+      const native = e.nativeEvent as WheelEvent | undefined;
+      const deltaY = native?.deltaY ?? 0;
+      if (deltaY === 0) return;
+      native?.preventDefault();
+
+      const lineCount = this.editorState.getBuffer().getLineCount();
+      const maxScroll = Math.max(0, lineCount - 1);
+      const notches = Math.sign(deltaY) * WHEEL_LINES_PER_NOTCH;
+      this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY + notches));
+      this.scene?.markDirty();
     });
 
     this.updateFromState();
@@ -574,31 +623,26 @@ export class VemEditorEntity extends UIComponent {
     const cursorY = 5 + cursor.line * this.lineHeight;
     const mode = this.editorState.getMode();
 
-    if (this.isFocused) {
-      r.beginPath();
-      if (mode === 'INSERT') {
-        r.moveTo(cursorX, cursorY);
-        r.lineTo(cursorX + 2, cursorY);
-        r.lineTo(cursorX + 2, cursorY + this.lineHeight);
-        r.lineTo(cursorX, cursorY + this.lineHeight);
-        r.closePath();
-        r.fill(theme.accent);
-      } else {
-        r.moveTo(cursorX, cursorY);
-        r.lineTo(cursorX + this.charWidth, cursorY);
-        r.lineTo(cursorX + this.charWidth, cursorY + this.lineHeight);
-        r.lineTo(cursorX, cursorY + this.lineHeight);
-        r.closePath();
-        r.fill(theme.accent + '88'); // 50% opacity accent
-      }
+    // Insert mode is always a thin vertical bar (GUI Vim convention) — the
+    // shape communicates the mode even in a pane that isn't the current
+    // window. "Current window" (real DOM focus, or this pane is what
+    // WorkspaceLayout considers active — see `isActivePane`) is what
+    // decides solid-fill vs. hollow outline, so at most one pane ever
+    // shows a solid cursor and it's unambiguous which window is current.
+    const isCurrentWindow = this.isFocused || this.isActivePane;
+    const cursorRight = mode === 'INSERT' ? cursorX + 2 : cursorX + this.charWidth;
+
+    r.beginPath();
+    r.moveTo(cursorX, cursorY);
+    r.lineTo(cursorRight, cursorY);
+    r.lineTo(cursorRight, cursorY + this.lineHeight);
+    r.lineTo(cursorX, cursorY + this.lineHeight);
+    r.closePath();
+
+    if (isCurrentWindow) {
+      r.fill(mode === 'INSERT' ? theme.accent : theme.accent + '88'); // bar solid, block 50%
     } else {
-      r.beginPath();
-      r.moveTo(cursorX, cursorY);
-      r.lineTo(cursorX + this.charWidth, cursorY);
-      r.lineTo(cursorX + this.charWidth, cursorY + this.lineHeight);
-      r.lineTo(cursorX, cursorY + this.lineHeight);
-      r.closePath();
-      r.stroke('#475569', 1); // slate-600 border for unfocused pointer
+      r.stroke('#475569', 1); // slate-600 border for a non-current window
     }
 
     r.restore(); // Restore scroll transform

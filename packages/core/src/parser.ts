@@ -10,6 +10,10 @@ export interface ParsedCommand {
   isValid: boolean;
 }
 
+// One shared motion vocabulary: word/WORD, line bounds, file bounds, bracket
+// match. Everything here is valid bare, after an operator, and in Visual mode.
+const motionKeys = ['h', 'j', 'k', 'l', 'w', 'b', 'e', 'W', 'B', 'E', '0', '^', '$', 'G', '%'];
+
 export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCommand {
   const result: ParsedCommand = {
     count: 1,
@@ -69,7 +73,7 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    const singleKeyMotions = ['h', 'j', 'k', 'l', 'w', 'b', 'e', '0', '$', 'G'];
+    const singleKeyMotions = motionKeys;
     if (singleKeyMotions.includes(remStr)) {
       result.count = count1;
       result.motion = remStr;
@@ -150,7 +154,7 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    const singleKeyMotions = ['h', 'j', 'k', 'l', 'w', 'b', 'e', '0', '$', 'G'];
+    const singleKeyMotions = motionKeys;
     if (singleKeyMotions.includes(remOpStr)) {
       result.motion = remOpStr;
       result.isComplete = true;
@@ -179,7 +183,7 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    const singleKeyMotions = ['h', 'j', 'k', 'l', 'w', 'b', 'e', '0', '$', 'G'];
+    const singleKeyMotions = motionKeys;
     if (singleKeyMotions.includes(remNormalStr)) {
       result.motion = remNormalStr;
       result.isComplete = true;
@@ -200,9 +204,18 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       'u',
       '<C-r>',
       'x',
+      'X',
+      'D',
+      'C',
+      'Y',
+      's',
+      'S',
       'p',
       'P',
       ':',
+      '/',
+      'n',
+      'N',
       'Escape',
       // Vim scroll motions (half/full page, single line)
       '<C-d>',

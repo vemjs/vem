@@ -351,3 +351,165 @@ describe('VemEditorEntity mouse selection (Vim mouse=a)', () => {
     expect(state.getVisualSelection()).toBeNull();
   });
 });
+
+describe('VemEditorEntity cursor rendering', () => {
+  const makeRecorder = () => {
+    const draws: { kind: 'fill' | 'stroke'; color: string; width?: number }[] = [];
+    const noop = () => {};
+    const r: any = {
+      beginPath: noop,
+      moveTo: noop,
+      lineTo: noop,
+      closePath: noop,
+      fill: (color: string) => draws.push({ kind: 'fill', color }),
+      stroke: (color: string, width?: number) => draws.push({ kind: 'stroke', color, width }),
+      roundRect: noop,
+      save: noop,
+      restore: noop,
+      translate: noop,
+      clip: noop,
+      fillText: noop,
+      measureText: (t: string) => ({ width: t.length * 8 }),
+    };
+    return { r, draws };
+  };
+  // The cursor is the LAST fill/stroke call before restore() in render();
+  // grid text uses fillText (not fill/stroke), so the final draw call is it.
+  const lastDraw = (draws: { kind: 'fill' | 'stroke'; color: string }[]) => draws.at(-1);
+
+  it('draws a hollow cursor when the pane is neither focused nor active', () => {
+    const state = new VemEditorState('hello');
+    const entity = new VemEditorEntity(state) as any;
+    const { r, draws } = makeRecorder();
+    entity.render(r);
+    expect(lastDraw(draws)?.kind).toBe('stroke');
+  });
+
+  it('draws a solid cursor when isActivePane is true, even without DOM focus', () => {
+    const state = new VemEditorState('hello');
+    const entity = new VemEditorEntity(state) as any;
+    entity.isActivePane = true;
+    const { r, draws } = makeRecorder();
+    entity.render(r);
+    expect(lastDraw(draws)?.kind).toBe('fill');
+  });
+
+  it('renders a thin bar in INSERT mode regardless of active-pane state', () => {
+    const state = new VemEditorState('hello');
+    state.handleKey('i');
+    const inactiveEntity = new VemEditorEntity(state) as any;
+    const { r: r1, draws: d1 } = makeRecorder();
+    inactiveEntity.render(r1);
+    expect(lastDraw(d1)?.kind).toBe('stroke'); // shape still a bar, just hollow
+
+    const activeEntity = new VemEditorEntity(state) as any;
+    activeEntity.isActivePane = true;
+    const { r: r2, draws: d2 } = makeRecorder();
+    activeEntity.render(r2);
+    expect(lastDraw(d2)).toEqual({ kind: 'fill', color: state.theme.accent });
+  });
+
+  it('calls onActivate when the pane is clicked (pointerdown)', () => {
+    const state = new VemEditorState('hello');
+    let activated = false;
+    const entity = new VemEditorEntity(state, () => {
+      activated = true;
+    }) as any;
+    entity.emit('pointerdown', { localX: 5, localY: 5 });
+    expect(activated).toBe(true);
+  });
+});
+
+describe('VemEditorEntity Ctrl-key routing (own a11y textarea path)', () => {
+  const pressCtrl = (entity: any, key: string) => {
+    let prevented = false;
+    entity.emit('keydown', {
+      nativeEvent: {
+        key,
+        ctrlKey: true,
+        preventDefault: () => {
+          prevented = true;
+        },
+      },
+    });
+    return prevented;
+  };
+
+  it('translates Ctrl-D/U/F/B/E/Y to Vim scroll motions and prevents the browser default', () => {
+    const state = new VemEditorState(Array.from({ length: 60 }, (_, i) => `line ${i}`).join('\n'));
+    const entity = new VemEditorEntity(state) as any;
+    state.setCursor(0, 0);
+
+    const prevented = pressCtrl(entity, 'd');
+    expect(prevented).toBe(true);
+    // A raw 'd' would start a delete-operator; the translated <C-d> instead
+    // scrolls the cursor down and leaves no pending operator.
+    expect(state.getCursor().line).toBeGreaterThan(0);
+    expect(state.getPendingKeys()).toEqual([]);
+  });
+
+  it('does not let Ctrl-D leak through as a literal "d" keypress', () => {
+    const state = new VemEditorState('hello world');
+    const entity = new VemEditorEntity(state) as any;
+    pressCtrl(entity, 'd');
+    // If 'd' had been fed raw, this would now be a pending delete-operator.
+    expect(state.getPendingKeys()).toEqual([]);
+    expect(state.getBuffer().getLine(0)).toBe('hello world');
+  });
+
+  it('prevents the browser default for suppress-only combos like Ctrl-S', () => {
+    const state = new VemEditorState('hello');
+    const entity = new VemEditorEntity(state) as any;
+    expect(pressCtrl(entity, 's')).toBe(true);
+  });
+
+  it('lets unmapped Ctrl combos (Ctrl-C) pass through to the browser', () => {
+    const state = new VemEditorState('hello');
+    const entity = new VemEditorEntity(state) as any;
+    expect(pressCtrl(entity, 'c')).toBe(false);
+  });
+});
+
+describe('VemEditorEntity mouse wheel scrolling (Vim mouse=a)', () => {
+  const wheel = (entity: any, deltaY: number) => {
+    let prevented = false;
+    entity.emit('wheel', { nativeEvent: { deltaY, preventDefault: () => (prevented = true) } });
+    return prevented;
+  };
+
+  it('scrolls the viewport down 3 lines per notch without moving the cursor', () => {
+    const state = new VemEditorState(Array.from({ length: 60 }, (_, i) => `line ${i}`).join('\n'));
+    const entity = new VemEditorEntity(state) as any;
+    state.setCursor(0, 0);
+
+    const prevented = wheel(entity, 100);
+    expect(prevented).toBe(true);
+    expect(entity.scrollY).toBe(3);
+    expect(state.getCursor()).toEqual({ line: 0, character: 0 });
+  });
+
+  it('scrolls up and clamps at 0', () => {
+    const state = new VemEditorState(Array.from({ length: 60 }, (_, i) => `line ${i}`).join('\n'));
+    const entity = new VemEditorEntity(state) as any;
+    wheel(entity, -100);
+    expect(entity.scrollY).toBe(0);
+  });
+
+  it('clamps at the last line so the buffer cannot scroll fully out of view', () => {
+    const state = new VemEditorState('one\ntwo\nthree');
+    const entity = new VemEditorEntity(state) as any;
+    wheel(entity, 100);
+    wheel(entity, 100);
+    wheel(entity, 100);
+    wheel(entity, 100);
+    expect(entity.scrollY).toBe(2); // lineCount - 1
+  });
+
+  it('ignores zero-delta wheel events', () => {
+    const state = new VemEditorState('one\ntwo');
+    const entity = new VemEditorEntity(state) as any;
+    const prevented = wheel(entity, 0);
+    expect(prevented).toBe(false);
+    expect(entity.scrollY).toBe(0);
+  });
+});

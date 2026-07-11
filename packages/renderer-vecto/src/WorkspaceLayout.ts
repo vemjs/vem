@@ -11,10 +11,10 @@ export class EditorPane extends Panel {
   public editorState: VemEditorState;
   public editorEntity: VemEditorEntity;
 
-  constructor(state: VemEditorState) {
+  constructor(state: VemEditorState, onActivate?: () => void) {
     super();
     this.editorState = state;
-    this.editorEntity = new VemEditorEntity(state);
+    this.editorEntity = new VemEditorEntity(state, onActivate);
     this.add(this.editorEntity);
   }
 
@@ -84,6 +84,25 @@ export class WorkspaceLayout extends UIComponent {
 
   public getActivePaneId(): string {
     return this.activePaneId;
+  }
+
+  /**
+   * Vim: clicking a window makes it the current window. Called by a pane's
+   * `onActivate` callback; moves both keyboard routing (`getActiveState()`)
+   * and the active-pane cursor highlight to the clicked pane.
+   */
+  public setActivePaneId(id: string): void {
+    if (!this.paneMap.has(id) || this.activePaneId === id) return;
+    this.activePaneId = id;
+    this.syncActivePaneVisuals();
+    this.scene?.markDirty();
+  }
+
+  /** Exactly one pane's entity is ever marked as Vim's current window. */
+  private syncActivePaneVisuals(): void {
+    for (const [id, pane] of this.paneEntityMap) {
+      pane.editorEntity.isActivePane = id === this.activePaneId;
+    }
   }
 
   /** Split the active pane — Vim's `:sp`/`:vsp`, or `:help`-style when `initialText` is given. */
@@ -193,6 +212,10 @@ export class WorkspaceLayout extends UIComponent {
     this.paneEntityMap.clear();
     this.layoutRoot = this.buildNode(this.rootNode);
     this.add(this.layoutRoot);
+    // A split/close rebuilds every pane's entity from scratch, so none of
+    // them has DOM focus yet — without this the cursor would render hollow
+    // in every pane until the user clicks one.
+    this.syncActivePaneVisuals();
   }
 
   // Code paths that mutate a VemEditorState directly (e.g. the app-level
@@ -208,7 +231,7 @@ export class WorkspaceLayout extends UIComponent {
 
   private buildNode(node: PaneNode): Entity {
     if (node.type === 'leaf') {
-      const pane = new EditorPane(node.state);
+      const pane = new EditorPane(node.state, () => this.setActivePaneId(node.id));
       pane.id = node.id;
       this.paneEntityMap.set(node.id, pane);
       return pane;

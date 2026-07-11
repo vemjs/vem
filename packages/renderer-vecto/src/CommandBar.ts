@@ -2,10 +2,16 @@ import { UIComponent, Text, Input } from '@vectojs/ui';
 import type { IRenderer } from '@vectojs/core';
 import type { VemEditorState } from '@vemjs/core';
 
+const PREFIX_X = 6;
+const PREFIX_Y = 7;
+const INPUT_PADDING = 2;
+const INPUT_GAP = 1;
+
 export class CommandBar extends UIComponent {
   private editorState: VemEditorState;
   private prefixText: Text;
   private input: Input;
+  private lastPrefix: ':' | '/' = ':';
 
   constructor(editorState: VemEditorState, width: number) {
     super();
@@ -13,25 +19,26 @@ export class CommandBar extends UIComponent {
     this.width = width;
     this.height = 30;
 
+    // Vim's command line is plain Normal text on the bottom row — no boxed
+    // highlight, no gap between the ':' and what you type — so the prefix and
+    // the shadow <input> share one font/baseline and sit flush together.
     this.prefixText = new Text(':', {
       font: 'bold 14px monospace',
-      color: '#38bdf8', // sky-400
     });
-    this.prefixText.setPosition(5, 5);
+    this.prefixText.setPosition(PREFIX_X, PREFIX_Y);
 
     this.input = new Input({
       width: width - 20,
       height: 25,
       font: '14px monospace',
-      color: '#e2e8f0',
-      bg: '#1e293b', // slate-800
       border: 'transparent',
+      padding: INPUT_PADDING,
       onChange: (value) => {
         this.editorState.setCommandText(value);
       },
     });
     this.input.id = 'vem-command-input';
-    this.input.setPosition(15, 2);
+    this.repositionInput();
 
     // Watch for Escape and Enter on the input component to bridge to editorState
     this.input.on('keydown', (e: any) => {
@@ -47,22 +54,35 @@ export class CommandBar extends UIComponent {
     this.add(this.input);
   }
 
+  private repositionInput(): void {
+    const x = PREFIX_X + this.prefixText.width + INPUT_GAP;
+    this.input.setPosition(x, 2);
+    this.input.width = Math.max(1, this.width - x - 4);
+  }
+
   public updateWidth(width: number): void {
     this.width = width;
-    this.input.width = width - 20;
+    this.repositionInput();
   }
 
   public syncFromState(): void {
     this.input.value = this.editorState.getCommandText();
+    const prefix = this.editorState.getCommandPrefix();
+    if (prefix !== this.lastPrefix) {
+      this.lastPrefix = prefix;
+      this.prefixText.setText(prefix);
+      this.repositionInput();
+    }
   }
 
   public render(r: IRenderer): void {
     const theme = this.editorState.theme;
 
-    // Sync theme colors dynamically
-    this.prefixText.color = theme.accent;
-    this.input.color = theme.statusBarFg;
-    this.input.bg = theme.statusBarBg;
+    // Sync theme colors dynamically. The command line is Normal-highlighted —
+    // same bg/fg as the buffer — not the StatusLine's reverse-video bar.
+    this.prefixText.color = theme.fg;
+    this.input.color = theme.fg;
+    this.input.bg = theme.bg;
 
     r.beginPath();
     r.moveTo(0, 0);
@@ -70,6 +90,6 @@ export class CommandBar extends UIComponent {
     r.lineTo(this.width, this.height);
     r.lineTo(0, this.height);
     r.closePath();
-    r.fill(theme.statusBarBg);
+    r.fill(theme.bg);
   }
 }
