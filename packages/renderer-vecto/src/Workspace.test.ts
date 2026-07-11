@@ -206,3 +206,33 @@ describe('WorkspaceLayout', () => {
     expect(dirty).toBe(true);
   });
 });
+
+describe('WorkspaceExplorer resize propagation', () => {
+  it('redistributes panels and workspace when width/height change after construction', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(1600, 1000, 'hello');
+    explorer.update(0, 0);
+
+    const inner = explorer as unknown as {
+      panelGroup: { width: number; height: number };
+      rightPanel: { width: number };
+      workspace: { width: number; height: number };
+    };
+    const staleRight = inner.rightPanel.width;
+
+    explorer.width = 2000;
+    explorer.height = 1150;
+    explorer.update(0, 0);
+    explorer.update(0, 0); // second pass: workspace syncs to the re-laid-out panel
+
+    expect(inner.panelGroup.width).toBe(2000);
+    expect(inner.panelGroup.height).toBe(1150);
+    // The panel the workspace lives in must grow with the group — a bare
+    // width write on PanelGroup never redistributed the panel sizes, so the
+    // editor froze at its construction size (visible as an empty bottom-right
+    // band whenever the real viewport was larger).
+    expect(inner.rightPanel.width).toBeGreaterThan(staleRight);
+    expect(inner.workspace.width).toBe(inner.rightPanel.width);
+    expect(inner.workspace.height).toBe(1150);
+  });
+});

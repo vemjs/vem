@@ -1,5 +1,14 @@
 # @vemjs/renderer-vecto
 
+## 0.1.12
+
+### Patch Changes
+
+- WorkspaceExplorer: propagate width/height changes via `PanelGroup.resize()` — a
+  bare width write never redistributed panel sizes, freezing the editor at its
+  construction size (empty bottom-right band when the viewport grew or the
+  browser zoom changed).
+
 ## 0.1.11
 
 ### Patch Changes

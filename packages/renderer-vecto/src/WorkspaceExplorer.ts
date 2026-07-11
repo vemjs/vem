@@ -280,8 +280,10 @@ export class WorkspaceExplorer extends UIComponent {
     }
 
     if (this.panelGroup.width !== this.width || this.panelGroup.height !== this.height) {
-      this.panelGroup.width = this.width;
-      this.panelGroup.height = this.height;
+      // resize() redistributes the panel sizes; a bare width/height write
+      // leaves every Panel at its old absolute size, freezing the editor at
+      // whatever the group measured when it was last (re)built.
+      this.panelGroup.resize(this.width, this.height);
     }
 
     if (
