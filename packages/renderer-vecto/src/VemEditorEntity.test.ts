@@ -567,3 +567,40 @@ describe('VemEditorEntity horizontal scroll (long lines keep the cursor visible)
     expect(state.getCursor().character).toBe(150);
   });
 });
+
+describe('VemEditorEntity IME composition (Fcitx5, Pinyin, etc.)', () => {
+  it('ignores composing keydowns instead of feeding them to the Vim state machine', () => {
+    const state = new VemEditorState('');
+    const entity = new VemEditorEntity(state) as any;
+    state.setMode('INSERT');
+
+    // A composing keydown (mid-Pinyin, browser reports key: 'Process')
+    // must not reach handleKey — feeding it in would corrupt the buffer or
+    // exit INSERT mode on a stray composing key.
+    entity.emit('keydown', { nativeEvent: { key: 'Process', isComposing: true } });
+    expect(state.getText()).toBe('');
+    expect(state.getMode()).toBe('INSERT');
+  });
+
+  it('inserts the committed text once composition ends via the change event', () => {
+    const state = new VemEditorState('');
+    const entity = new VemEditorEntity(state) as any;
+    state.setMode('INSERT');
+
+    // Mid-composition 'change' events (composition still set) are ignored.
+    entity.emit('change', { value: '你', composition: { start: 0, length: 1 } });
+    expect(state.getText()).toBe('');
+
+    // Composition committed: composition is null, value is the final text.
+    entity.emit('change', { value: '你好', composition: null });
+    expect(state.getText()).toBe('你好');
+  });
+
+  it('does not insert composed text outside INSERT mode', () => {
+    const state = new VemEditorState('');
+    const entity = new VemEditorEntity(state) as any;
+    // NORMAL mode by default.
+    entity.emit('change', { value: '你好', composition: null });
+    expect(state.getText()).toBe('');
+  });
+});

@@ -82,6 +82,13 @@ export class VemEditorEntity extends UIComponent {
       const keyboardEvent = e.nativeEvent as KeyboardEvent;
       if (!keyboardEvent) return;
 
+      // IME composition (Fcitx5, Pinyin, etc.): composing keydowns fire as
+      // 'Process' with intermediate, not-yet-committed text — feeding them
+      // to the Vim state machine corrupts the buffer and breaks composition
+      // entirely. The composed result arrives as a normal input once the IME
+      // commits it; this handler sees it on the next, non-composing keydown.
+      if (keyboardEvent.isComposing || keyboardEvent.key === 'Process') return;
+
       const key = keyboardEvent.key;
       const vimModeEnabled = (this.editorState as any).vimModeEnabled ?? true;
 
@@ -168,6 +175,33 @@ export class VemEditorEntity extends UIComponent {
 
       this.editorState.handleKey(feedKey);
       this.updateFromState();
+    });
+
+    // IME composition (Fcitx5, Pinyin/Zhuyin, etc.): @vectojs/core's a11y
+    // projection emits 'change' with the shadow textarea's value once a
+    // composition commits (composition becomes null again). The 'keydown'
+    // handler above ignores composing keystrokes entirely, so this is the
+    // only path composed text reaches the buffer.
+    let lastComposedValue = '';
+    this.on('change', (e: any) => {
+      if (e.composition) return; // still composing — wait for it to commit
+      const value = (e.value as string | undefined) ?? '';
+      if (!value || value === lastComposedValue) return;
+      lastComposedValue = value;
+
+      if (this.editorState.getMode() === 'INSERT') {
+        for (const ch of value) {
+          this.editorState.handleKey(ch);
+        }
+        this.updateFromState();
+        this.scene?.markDirty();
+      }
+
+      // Reset the shadow textarea so the next composition starts from an
+      // empty value instead of re-delivering the same text on its next commit.
+      const el = this.scene?.getA11yElement(this.id) as HTMLTextAreaElement | undefined;
+      if (el) el.value = '';
+      lastComposedValue = '';
     });
 
     // System-clipboard wiring for `:set clipboard=unnamed` — core stays
