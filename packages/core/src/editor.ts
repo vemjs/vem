@@ -13,9 +13,38 @@ import {
 import { parseKeys } from './parser';
 import type { ParsedCommand } from './parser';
 
+/**
+ * <Home>/<End>/arrow-key equivalents to the hjkl/0/$ motions they mirror in
+ * real Vim — reused so Normal/Visual mode gets identical clamping and (for
+ * Visual) selection-extension behavior as their letter counterparts, instead
+ * of a second hand-rolled cursor-movement path.
+ */
+const NAV_KEY_MOTION: Record<string, string> = {
+  ArrowLeft: 'h',
+  ArrowRight: 'l',
+  ArrowUp: 'k',
+  ArrowDown: 'j',
+  Home: '0',
+  End: '$',
+};
+
 export interface RegisterContent {
   text: string;
   type: 'char' | 'line' | 'block';
+}
+
+/**
+ * Pluggable system-clipboard backend. Core has zero DOM/environment
+ * dependency (no `navigator`, no Tauri APIs), so the host — the browser
+ * renderer or the desktop shell — supplies this: `write` is fired
+ * synchronously whenever the unnamed register changes and `:set
+ * clipboard=unnamed` is on; reading the OS clipboard is inherently async in
+ * both a browser and Tauri, so there's no `read` here — the host instead
+ * pushes fresh text in via {@link VemEditorState.setSystemClipboardText}
+ * (e.g. on window focus), keeping `p`/`P` fully synchronous.
+ */
+export interface ClipboardProvider {
+  write(text: string): void;
 }
 
 export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'hint';
@@ -161,6 +190,8 @@ export class VemEditorState {
   private buffer: VimBuffer;
   private undoManager: UndoManager;
   private register: RegisterContent | null = null;
+  private clipboardMode: 'internal' | 'system' = 'internal';
+  private clipboardProvider: ClipboardProvider | null = null;
   private pendingKeys: string[] = [];
   private visualSelection: VisualSelection | null = null;
   private isInsertMutated = false;
@@ -187,6 +218,9 @@ export class VemEditorState {
     this.buffer = new VimBuffer(initialText);
     this.undoManager = new UndoManager();
     this.buffer.onChange(() => {
+      if (this.recordingDotActive) {
+        this.recordingDotMutated = true;
+      }
       this.triggerChangeBuffer();
     });
     setTimeout(() => {
@@ -475,6 +509,41 @@ export class VemEditorState {
     return this.register;
   }
 
+  /** Write every yank/delete to `this.register`, and mirror it out to the
+   * system clipboard too when `:set clipboard=unnamed` is active. */
+  private setRegister(content: RegisterContent): void {
+    this.register = content;
+    if (this.clipboardMode === 'system') {
+      this.clipboardProvider?.write(content.text);
+    }
+  }
+
+  /** `internal` (default `"` register only) or `system` (`:set clipboard=unnamed`). */
+  public getClipboardMode(): 'internal' | 'system' {
+    return this.clipboardMode;
+  }
+
+  /** Programmatic equivalent of `:set clipboard=unnamed` — used by ConfigLoader. */
+  public setClipboardMode(mode: 'internal' | 'system'): void {
+    this.clipboardMode = mode;
+  }
+
+  /** Host-supplied system-clipboard write backend — see {@link ClipboardProvider}. */
+  public setClipboardProvider(provider: ClipboardProvider | null): void {
+    this.clipboardProvider = provider;
+  }
+
+  /**
+   * Push freshly-read OS clipboard text in so `p`/`P` see it — since reading
+   * the system clipboard is async everywhere, the host calls this proactively
+   * (e.g. on window/pane focus) rather than core awaiting a read mid-keystroke.
+   * A no-op unless `:set clipboard=unnamed` is active.
+   */
+  public setSystemClipboardText(text: string): void {
+    if (this.clipboardMode !== 'system') return;
+    this.register = { text, type: 'char' };
+  }
+
   public getCommandText(): string {
     return this.commandText;
   }
@@ -498,6 +567,17 @@ export class VemEditorState {
   private awaitingRecordRegister = false;
   private awaitingReplayRegister = false;
   private lastPlayedRegister: string | null = null;
+
+  // --- Dot-repeat (Vim `.`) ---
+  // Tracks the raw keystrokes of the currently in-progress top-level NORMAL-
+  // mode command (through any INSERT-mode typing it triggers, until back to
+  // a settled NORMAL state) and promotes them to `lastChangeKeys` only if
+  // the buffer was actually mutated — motions don't get remembered, changes
+  // do, matching Vim's "repeat last change" semantics.
+  private recordingDotActive = false;
+  private recordingDotKeys: string[] = [];
+  private recordingDotMutated = false;
+  private lastChangeKeys: string[] = [];
 
   /** True while `q{reg}` recording is active. */
   public isRecording(): boolean {
@@ -524,12 +604,29 @@ export class VemEditorState {
     this.triggerChange();
   }
 
+  /** Replay the last completed change verbatim (Vim `.`). */
+  private repeatLastChange(): void {
+    if (this.lastChangeKeys.length === 0) return;
+    const keys = this.lastChangeKeys;
+    this.isReplaying = true;
+    try {
+      for (const k of keys) this.dispatchKey(k);
+    } finally {
+      this.isReplaying = false;
+    }
+    this.triggerChange();
+  }
+
   // --- Key Input Entry Point ---
   public handleKey(key: string): void {
     // Macro control lives above the dispatcher so `q`/`@` are intercepted
     // before they reach normal-mode command parsing — but only at top level
     // (NORMAL mode, no pending multi-key sequence, not mid-replay).
     if (!this.isReplaying && this.mode === 'NORMAL' && this.pendingKeys.length === 0) {
+      if (key === '.' && !this.awaitingRecordRegister && !this.awaitingReplayRegister) {
+        this.repeatLastChange();
+        return;
+      }
       if (this.awaitingRecordRegister) {
         this.awaitingRecordRegister = false;
         if (/^[a-z0-9]$/i.test(key)) {
@@ -567,7 +664,34 @@ export class VemEditorState {
       this.recordedKeys.push(key);
     }
 
+    // A fresh top-level NORMAL-mode key starts a new dot-repeat candidate;
+    // once started, every key (including a whole INSERT-mode typing spree)
+    // keeps accumulating until we're back to a settled NORMAL state.
+    if (!this.isReplaying) {
+      if (this.mode === 'NORMAL' && this.pendingKeys.length === 0 && !this.recordingDotActive) {
+        this.recordingDotActive = true;
+        this.recordingDotKeys = [];
+        this.recordingDotMutated = false;
+      }
+      if (this.recordingDotActive) {
+        this.recordingDotKeys.push(key);
+      }
+    }
+
     this.dispatchKey(key);
+
+    if (
+      !this.isReplaying &&
+      this.recordingDotActive &&
+      this.mode === 'NORMAL' &&
+      this.pendingKeys.length === 0
+    ) {
+      if (this.recordingDotMutated) {
+        this.lastChangeKeys = [...this.recordingDotKeys];
+      }
+      this.recordingDotActive = false;
+      this.recordingDotKeys = [];
+    }
   }
 
   private dispatchKey(key: string): void {
@@ -681,6 +805,27 @@ export class VemEditorState {
         this.triggerChange();
         return;
       }
+      // Arrow/Home/PageUp/PageDown move the cursor without leaving INSERT,
+      // exactly like real Vim/most editors; <End> lands past the last
+      // character (unlike Normal-mode $) so appending stays natural.
+      if (key === 'End') {
+        this.moveToEndOfLine();
+        this.triggerChange();
+        return;
+      }
+      if (key === 'PageUp' || key === 'PageDown') {
+        this.moveCursorVertically(
+          key === 'PageUp' ? -this.halfPageLines * 2 : this.halfPageLines * 2,
+        );
+        this.triggerChange();
+        return;
+      }
+      const insertNavMotion = NAV_KEY_MOTION[key];
+      if (insertNavMotion && insertNavMotion !== '$') {
+        this.moveCursorByMotion(insertNavMotion, 1);
+        this.triggerChange();
+        return;
+      }
       if (key.length === 1) {
         this.handleCharInputInInsert(key);
         this.triggerChange();
@@ -694,6 +839,28 @@ export class VemEditorState {
       this.pendingKeys = [];
       if (this.mode === 'VISUAL') {
         this.setMode('NORMAL');
+      }
+      this.triggerChange();
+      return;
+    }
+
+    // Arrow keys/<Home>/<End> reuse the hjkl/0/$ motion pipeline (correct
+    // Visual-mode selection extension included); <PageUp>/<PageDown> mirror
+    // Ctrl-B/Ctrl-F's full-screen jump.
+    const navMotion = NAV_KEY_MOTION[key];
+    if (navMotion) {
+      this.pendingKeys = [];
+      this.executeCommand({ count: 1, motion: navMotion, isComplete: true, isValid: true });
+      this.triggerChange();
+      return;
+    }
+    if (key === 'PageUp' || key === 'PageDown') {
+      this.pendingKeys = [];
+      this.moveCursorVertically(
+        key === 'PageUp' ? -this.halfPageLines * 2 : this.halfPageLines * 2,
+      );
+      if (this.mode === 'VISUAL' && this.visualSelection) {
+        this.visualSelection.active = { ...this.cursor };
       }
       this.triggerChange();
       return;
@@ -782,7 +949,7 @@ export class VemEditorState {
     }
 
     if (cmd.motion) {
-      this.moveCursorByMotion(cmd.motion, cmd.count);
+      this.moveCursorByMotion(cmd.motion, cmd.count, cmd.findChar);
       return;
     }
 
@@ -827,10 +994,10 @@ export class VemEditorState {
           if (from < this.cursor.character) {
             this.saveStateForUndo();
             const line = this.buffer.getLine(this.cursor.line);
-            this.register = {
+            this.setRegister({
               text: line.substring(from, this.cursor.character),
               type: 'char',
-            };
+            });
             this.buffer.setLine(
               this.cursor.line,
               line.substring(0, from) + line.substring(this.cursor.character),
@@ -856,7 +1023,7 @@ export class VemEditorState {
           );
           const lines: string[] = [];
           for (let l = this.cursor.line; l <= endLine; l++) lines.push(this.buffer.getLine(l));
-          this.register = { text: lines.join('\n') + '\n', type: 'line' };
+          this.setRegister({ text: lines.join('\n') + '\n', type: 'line' });
           break;
         }
         case 's': {
@@ -867,7 +1034,7 @@ export class VemEditorState {
         }
         case 'S': {
           this.saveStateForUndo();
-          this.register = { text: this.buffer.getLine(this.cursor.line) + '\n', type: 'line' };
+          this.setRegister({ text: this.buffer.getLine(this.cursor.line) + '\n', type: 'line' });
           this.buffer.setLine(this.cursor.line, '');
           this.cursor.character = 0;
           this.desiredCol = 0;
@@ -884,6 +1051,18 @@ export class VemEditorState {
           break;
         case 'N':
           this.repeatSearch(-1);
+          break;
+        case '*':
+          this.searchWordUnderCursor(1);
+          break;
+        case '#':
+          this.searchWordUnderCursor(-1);
+          break;
+        case 'r':
+          if (cmd.findChar !== undefined) {
+            this.saveStateForUndo();
+            this.replaceCharUnderCursor(cmd.findChar, cmd.count);
+          }
           break;
         case 'u':
           this.undo();
@@ -1001,7 +1180,10 @@ export class VemEditorState {
 
     if (base === 'w') {
       this.triggerSave();
-    } else if (base === 'q') {
+    } else if (base === 'q' || base === 'quit' || base === 'exit') {
+      // `quit`/`exit` aren't real Vim commands (Vim only has `:q`), but
+      // they're what newcomers instinctively type — accepting them narrows
+      // that surprise gap instead of bouncing new users off an E492.
       this.triggerQuit(force);
     } else if (base === 'wq' || base === 'x') {
       this.triggerSave();
@@ -1018,6 +1200,45 @@ export class VemEditorState {
   }
 
   private executeSetOption(option: string): void {
+    // Vim's real syntax for OS-clipboard integration: `:set clipboard=unnamed`
+    // (or `unnamedplus`) routes y/d/c/x/p/P through the system clipboard
+    // instead of just the internal `"` register; `:set clipboard=` reverts.
+    const eq = option.indexOf('=');
+    if (eq !== -1) {
+      const key = option.substring(0, eq);
+      const value = option.substring(eq + 1);
+      if (key === 'clipboard' || key === 'cb') {
+        if (value === 'unnamed' || value === 'unnamedplus') {
+          this.clipboardMode = 'system';
+        } else if (value === '') {
+          this.clipboardMode = 'internal';
+        } else {
+          this.statusMessage = `E474: Invalid argument: clipboard=${value}`;
+        }
+      } else {
+        this.statusMessage = `E518: Unknown option: ${key}`;
+      }
+      return;
+    }
+
+    // Vim's `:set {option}!` toggles a boolean option — very common muscle
+    // memory (`:set nu!`, `:set rnu!`) that errored as "unknown option"
+    // before, since it was never stripped from the option name.
+    if (option.endsWith('!')) {
+      const base = option.slice(0, -1);
+      const isRelevant = ['relativenumber', 'rnu', 'number', 'nu'].includes(base);
+      if (!isRelevant) {
+        this.statusMessage = `E518: Unknown option: ${option}`;
+        return;
+      }
+      const isRelativeOpt = base === 'relativenumber' || base === 'rnu';
+      const currentlyOn = isRelativeOpt
+        ? this.layoutConfig.lineNumbers === 'relative'
+        : this.layoutConfig.lineNumbers !== 'none';
+      this.executeSetOption(currentlyOn ? `no${base}` : base);
+      return;
+    }
+
     if (option === 'relativenumber' || option === 'rnu') {
       this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'relative' };
     } else if (option === 'norelativenumber' || option === 'nornu') {
@@ -1035,7 +1256,7 @@ export class VemEditorState {
 
   private executeVisualCommand(cmd: ParsedCommand): void {
     if (cmd.motion) {
-      this.moveCursorByMotion(cmd.motion, cmd.count);
+      this.moveCursorByMotion(cmd.motion, cmd.count, cmd.findChar);
       if (this.visualSelection) {
         this.visualSelection.active = { ...this.cursor };
       }
@@ -1055,7 +1276,15 @@ export class VemEditorState {
   }
 
   // --- Motions Execution ---
-  private moveCursorByMotion(motion: string, count: number): void {
+  /**
+   * Returns false only for a failed f/F/t/T search (target char not found) —
+   * matching Vim, where the whole motion (and any operator riding on it)
+   * aborts rather than leaving the cursor somewhere half-moved.
+   */
+  private moveCursorByMotion(motion: string, count: number, findChar?: string): boolean {
+    if (motion === 'f' || motion === 'F' || motion === 't' || motion === 'T') {
+      return this.moveByFindChar(motion, count, findChar);
+    }
     for (let i = 0; i < count; i++) {
       switch (motion) {
         case 'h':
@@ -1146,6 +1375,42 @@ export class VemEditorState {
           break;
       }
     }
+    return true;
+  }
+
+  /**
+   * f/F/t/T: find the count'th occurrence of `findChar` on the current
+   * line only (Vim's find-char motions never cross lines). f/F land ON the
+   * char; t/T land just before/after it. Fails (returns false, cursor
+   * untouched) if there aren't `count` occurrences.
+   */
+  private moveByFindChar(motion: 'f' | 'F' | 't' | 'T', count: number, findChar?: string): boolean {
+    if (!findChar) return false;
+    const line = this.buffer.getLine(this.cursor.line);
+    let pos = this.cursor.character;
+    for (let i = 0; i < count; i++) {
+      let found: number | null = null;
+      if (motion === 'f' || motion === 't') {
+        for (let c = pos + 1; c < line.length; c++) {
+          if (line[c] === findChar) {
+            found = motion === 'f' ? c : c - 1;
+            break;
+          }
+        }
+      } else {
+        for (let c = pos - 1; c >= 0; c--) {
+          if (line[c] === findChar) {
+            found = motion === 'F' ? c : c + 1;
+            break;
+          }
+        }
+      }
+      if (found === null) return false;
+      pos = found;
+    }
+    this.cursor.character = pos;
+    this.desiredCol = pos;
+    return true;
   }
 
   // --- Operator Command Execution ---
@@ -1164,10 +1429,10 @@ export class VemEditorState {
       for (let l = startLine; l <= endLine; l++) {
         yankedLines.push(this.buffer.getLine(l));
       }
-      this.register = {
+      this.setRegister({
         text: yankedLines.join('\n') + '\n',
         type: 'line',
-      };
+      });
 
       if (op === 'd' || op === 'c') {
         this.buffer.deleteLines(startLine, endLine);
@@ -1190,9 +1455,13 @@ export class VemEditorState {
       range = getTextObjectRange(this.buffer, this.cursor, cmd.textObject);
     } else if (cmd.motion) {
       const startPos = { ...this.cursor };
-      this.moveCursorByMotion(cmd.motion, count);
+      const moved = this.moveCursorByMotion(cmd.motion, count, cmd.findChar);
       const endPos = { ...this.cursor };
       this.cursor = { ...startPos }; // Restore cursor before operation
+
+      // A failed f/F/t/T search aborts the whole operator, matching Vim —
+      // no partial deletion for a target that was never found.
+      if (!moved) return;
 
       range = { start: startPos, end: endPos };
 
@@ -1220,10 +1489,10 @@ export class VemEditorState {
       for (let l = s.line; l <= e.line; l++) {
         yankedLines.push(this.buffer.getLine(l));
       }
-      this.register = {
+      this.setRegister({
         text: yankedLines.join('\n') + '\n',
         type: 'line',
-      };
+      });
 
       if (op === 'd' || op === 'c') {
         this.buffer.deleteLines(s.line, e.line);
@@ -1242,12 +1511,18 @@ export class VemEditorState {
       // 'd$' deletes to end of line (inclusive).
       // e/E land ON the word's last char and % ON the matching bracket, so the
       // operated range includes that character, exactly like d$ (:help inclusive).
+      // f/F/t/T are inclusive too — the sort-then-extend-high-end logic above
+      // already makes this correct for F/T's backward searches as well.
       let isInclusive =
         cmd.textObject !== undefined ||
         cmd.motion === '$' ||
         cmd.motion === 'e' ||
         cmd.motion === 'E' ||
-        cmd.motion === '%';
+        cmd.motion === '%' ||
+        cmd.motion === 'f' ||
+        cmd.motion === 'F' ||
+        cmd.motion === 't' ||
+        cmd.motion === 'T';
 
       const startLineText = this.buffer.getLine(s.line);
       const endLineText = this.buffer.getLine(e.line);
@@ -1263,10 +1538,10 @@ export class VemEditorState {
         yankText += endLineText.substring(0, e.character + (isInclusive ? 1 : 0));
       }
 
-      this.register = {
+      this.setRegister({
         text: yankText,
         type: 'char',
-      };
+      });
 
       if (op === 'd' || op === 'c') {
         const deleteEnd = { ...e };
@@ -1306,10 +1581,10 @@ export class VemEditorState {
       for (let l = startLine; l <= endLine; l++) {
         yankedLines.push(this.buffer.getLine(l));
       }
-      this.register = {
+      this.setRegister({
         text: yankedLines.join('\n') + '\n',
         type: 'line',
-      };
+      });
 
       if (op === 'd' || op === 'c') {
         this.buffer.deleteLines(startLine, endLine);
@@ -1335,10 +1610,10 @@ export class VemEditorState {
         yankText += endLineText.substring(0, e.character + 1);
       }
 
-      this.register = {
+      this.setRegister({
         text: yankText,
         type: 'char',
-      };
+      });
 
       if (op === 'd' || op === 'c') {
         const deleteEnd = { ...e };
@@ -1361,10 +1636,10 @@ export class VemEditorState {
         yankedBlocks.push(chunk);
       }
 
-      this.register = {
+      this.setRegister({
         text: yankedBlocks.join('\n'),
         type: 'block',
-      };
+      });
 
       if (op === 'd' || op === 'c') {
         for (let l = minLine; l <= maxLine; l++) {
@@ -1404,7 +1679,7 @@ export class VemEditorState {
   private deleteToEndOfLine(keepCursorForInsert = false): void {
     const line = this.buffer.getLine(this.cursor.line);
     if (this.cursor.character >= line.length) return;
-    this.register = { text: line.substring(this.cursor.character), type: 'char' };
+    this.setRegister({ text: line.substring(this.cursor.character), type: 'char' });
     this.buffer.setLine(this.cursor.line, line.substring(0, this.cursor.character));
     if (!keepCursorForInsert) {
       this.cursor.character = Math.max(0, this.cursor.character - 1);
@@ -1467,6 +1742,67 @@ export class VemEditorState {
     this.statusMessage = `E486: Pattern not found: ${q}`;
   }
 
+  private isWordChar(ch: string | undefined): boolean {
+    return !!ch && /[a-zA-Z0-9_]/.test(ch);
+  }
+
+  /** Vim's `*`/`#`: search for the whole word under the cursor, boundary-matched. */
+  private searchWordUnderCursor(dir: 1 | -1): void {
+    const line = this.buffer.getLine(this.cursor.line);
+    if (!this.isWordChar(line[this.cursor.character])) return;
+
+    let start = this.cursor.character;
+    while (start > 0 && this.isWordChar(line[start - 1])) start--;
+    let end = this.cursor.character;
+    while (end < line.length - 1 && this.isWordChar(line[end + 1])) end++;
+    const word = line.substring(start, end + 1);
+
+    this.lastSearch = word;
+    this.lastSearchDir = dir;
+    this.jumpToWholeWord(word, dir, { line: this.cursor.line, character: dir === 1 ? end : start });
+  }
+
+  /** Like jumpToMatch, but only accepts matches with a non-word char (or edge) on both sides. */
+  private jumpToWholeWord(word: string, dir: 1 | -1, from: Position): void {
+    const lineCount = this.buffer.getLineCount();
+    const isBoundaryMatch = (text: string, idx: number) =>
+      !this.isWordChar(text[idx - 1]) && !this.isWordChar(text[idx + word.length]);
+
+    if (dir === 1) {
+      for (let offset = 0; offset <= lineCount; offset++) {
+        const l = (from.line + offset) % lineCount;
+        const text = this.buffer.getLine(l);
+        let idx = text.indexOf(word, offset === 0 ? from.character + 1 : 0);
+        while (idx !== -1 && !isBoundaryMatch(text, idx)) {
+          idx = text.indexOf(word, idx + 1);
+        }
+        if (idx !== -1) {
+          if (offset === lineCount && idx > from.character) break;
+          this.cursor = { line: l, character: idx };
+          this.desiredCol = idx;
+          return;
+        }
+      }
+    } else {
+      for (let offset = 0; offset <= lineCount; offset++) {
+        const l = (from.line - offset + lineCount * 2) % lineCount;
+        const text = this.buffer.getLine(l);
+        const upTo = offset === 0 ? from.character - 1 : text.length;
+        if (upTo < 0) continue;
+        let idx = text.lastIndexOf(word, upTo);
+        while (idx !== -1 && !isBoundaryMatch(text, idx)) {
+          idx = idx === 0 ? -1 : text.lastIndexOf(word, idx - 1);
+        }
+        if (idx !== -1 && (offset !== 0 || idx < from.character)) {
+          this.cursor = { line: l, character: idx };
+          this.desiredCol = idx;
+          return;
+        }
+      }
+    }
+    this.statusMessage = `E486: Pattern not found: ${word}`;
+  }
+
   private deleteCharUnderCursor(count: number): void {
     const line = this.buffer.getLine(this.cursor.line);
     if (line.length === 0) return;
@@ -1474,10 +1810,10 @@ export class VemEditorState {
     const deleteCount = Math.min(count, line.length - this.cursor.character);
     const deletedText = line.substring(this.cursor.character, this.cursor.character + deleteCount);
 
-    this.register = {
+    this.setRegister({
       text: deletedText,
       type: 'char',
-    };
+    });
 
     const before = line.substring(0, this.cursor.character);
     const after = line.substring(this.cursor.character + deleteCount);
@@ -1486,6 +1822,17 @@ export class VemEditorState {
     // Adjust cursor if it's past the end of the line in Normal mode
     const newLineLen = this.buffer.getLine(this.cursor.line).length;
     this.cursor.character = Math.min(this.cursor.character, Math.max(0, newLineLen - 1));
+    this.desiredCol = this.cursor.character;
+  }
+
+  /** Vim's r{char}: replace `count` chars starting at the cursor with `char`, no mode change. */
+  private replaceCharUnderCursor(char: string, count: number): void {
+    const line = this.buffer.getLine(this.cursor.line);
+    if (this.cursor.character + count > line.length) return; // not enough chars — Vim beeps, no-op
+    const before = line.substring(0, this.cursor.character);
+    const after = line.substring(this.cursor.character + count);
+    this.buffer.setLine(this.cursor.line, before + char.repeat(count) + after);
+    this.cursor.character += count - 1;
     this.desiredCol = this.cursor.character;
   }
 

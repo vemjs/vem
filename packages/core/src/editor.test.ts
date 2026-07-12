@@ -238,6 +238,29 @@ describe('ex-command extensions', () => {
     editor.handleKey('Enter');
     expect(editor.layoutConfig.lineNumbers).toBe('absolute');
   });
+
+  it('supports the Vim `!` toggle suffix (:set nu!, :set rnu!)', () => {
+    const editor = new VemEditorState('test');
+    const set = (opt: string) => {
+      editor.handleKey(':');
+      editor.setCommandText(`set ${opt}`);
+      editor.handleKey('Enter');
+    };
+
+    expect(editor.layoutConfig.lineNumbers).toBe('none');
+    set('number!');
+    expect(editor.layoutConfig.lineNumbers).toBe('absolute');
+    set('number!');
+    expect(editor.layoutConfig.lineNumbers).toBe('none');
+
+    set('rnu!');
+    expect(editor.layoutConfig.lineNumbers).toBe('relative');
+    set('rnu!');
+    expect(editor.layoutConfig.lineNumbers).toBe('absolute');
+
+    set('bogus!');
+    expect(editor.statusMessage).toBe('E518: Unknown option: bogus!');
+  });
 });
 
 describe('global ex commands', () => {
@@ -308,6 +331,20 @@ describe('command mode editing', () => {
     expect(saves).toBe(2);
     expect(quits).toBe(2);
   });
+
+  it('accepts :quit and :exit as friendlier aliases for :q (not real Vim commands, but expected)', () => {
+    const editor = new VemEditorState('x');
+    const forces: boolean[] = [];
+    editor.onQuit((force) => forces.push(force));
+
+    for (const cmd of ['quit', 'exit', 'quit!', 'exit!']) {
+      editor.handleKey(':');
+      editor.setCommandText(cmd);
+      editor.handleKey('Enter');
+    }
+
+    expect(forces).toEqual([false, false, true, true]);
+  });
 });
 
 describe('macro recording and replay', () => {
@@ -347,6 +384,122 @@ describe('macro recording and replay', () => {
     editor.handleKey('q'); // stop recording
     expect(editor.isRecording()).toBe(false);
     expect(editor.getBuffer().getLine(0)).toBe('q');
+  });
+});
+
+describe('dot-repeat (.)', () => {
+  it('repeats a simple mutating command (x)', () => {
+    const editor = new VemEditorState('abcdef');
+    editor.handleKey('x');
+    editor.handleKey('.');
+    editor.handleKey('.');
+    expect(editor.getBuffer().getLine(0)).toBe('def');
+  });
+
+  it('repeats an operator+motion command (dw) from the new cursor position', () => {
+    const editor = new VemEditorState('one two three four');
+    editor.handleKey('d');
+    editor.handleKey('w');
+    editor.handleKey('.');
+    expect(editor.getBuffer().getLine(0)).toBe('three four');
+  });
+
+  it('repeats a whole insert-mode change (i...Escape)', () => {
+    const editor = new VemEditorState('hello');
+    editor.handleKey('i');
+    editor.handleKey('X');
+    editor.handleKey('Escape');
+    expect(editor.getBuffer().getLine(0)).toBe('Xhello');
+
+    editor.handleKey('l');
+    editor.handleKey('.');
+    expect(editor.getBuffer().getLine(0)).toBe('XXhello');
+  });
+
+  it('does not repeat pure motions (dot stays empty until a real change happens)', () => {
+    const editor = new VemEditorState('l1\nl2\nl3');
+    editor.handleKey('j');
+    editor.handleKey('.');
+    expect(editor.getBuffer().getText()).toBe('l1\nl2\nl3');
+  });
+
+  it('yanking does not count as a repeatable change, but a later paste does', () => {
+    const editor = new VemEditorState('a\nb\nc');
+    editor.handleKey('y');
+    editor.handleKey('y');
+    editor.handleKey('j');
+    editor.handleKey('p');
+    expect(editor.getBuffer().getText()).toBe('a\nb\na\nc');
+
+    editor.handleKey('.');
+    expect(editor.getBuffer().getText()).toBe('a\nb\na\na\nc');
+  });
+});
+
+describe('system clipboard integration (:set clipboard=unnamed)', () => {
+  const type = (editor: VemEditorState, keys: string) => {
+    for (const k of keys) editor.handleKey(k);
+  };
+  const setClipboard = (editor: VemEditorState, value: string) => {
+    type(editor, `:set clipboard=${value}`);
+    editor.handleKey('Enter');
+  };
+
+  it('defaults to internal — no clipboard writes without opting in', () => {
+    const writes: string[] = [];
+    const editor = new VemEditorState('hello');
+    editor.setClipboardProvider({ write: (t) => writes.push(t) });
+    expect(editor.getClipboardMode()).toBe('internal');
+
+    editor.handleKey('y');
+    editor.handleKey('y');
+    expect(writes).toEqual([]);
+  });
+
+  it('mirrors yanks and deletes to the system clipboard once enabled', () => {
+    const writes: string[] = [];
+    const editor = new VemEditorState('hello world');
+    editor.setClipboardProvider({ write: (t) => writes.push(t) });
+    setClipboard(editor, 'unnamed');
+    expect(editor.getClipboardMode()).toBe('system');
+
+    editor.handleKey('y');
+    editor.handleKey('y');
+    expect(writes).toEqual(['hello world\n']);
+
+    type(editor, 'dw');
+    expect(writes).toEqual(['hello world\n', 'hello ']);
+  });
+
+  it('unnamedplus is accepted too; a bare `clipboard=` reverts to internal', () => {
+    const editor = new VemEditorState('x');
+    setClipboard(editor, 'unnamedplus');
+    expect(editor.getClipboardMode()).toBe('system');
+    setClipboard(editor, '');
+    expect(editor.getClipboardMode()).toBe('internal');
+  });
+
+  it('rejects an unrecognized clipboard value', () => {
+    const editor = new VemEditorState('x');
+    setClipboard(editor, 'bogus');
+    expect(editor.statusMessage).toBe('E474: Invalid argument: clipboard=bogus');
+    expect(editor.getClipboardMode()).toBe('internal');
+  });
+
+  it('p/P paste host-pushed system clipboard text once enabled', () => {
+    const editor = new VemEditorState('hello');
+    setClipboard(editor, 'unnamed');
+    editor.setSystemClipboardText('XYZ');
+    editor.handleKey('p');
+    expect(editor.getBuffer().getLine(0)).toBe('hXYZello');
+  });
+
+  it('setSystemClipboardText is a no-op while clipboard mode is internal', () => {
+    const editor = new VemEditorState('hello');
+    editor.setSystemClipboardText('XYZ');
+    editor.handleKey('p');
+    // No register content at all yet, so paste does nothing.
+    expect(editor.getBuffer().getLine(0)).toBe('hello');
   });
 });
 
@@ -567,6 +720,100 @@ describe('search: / prompt, n/N repeat', () => {
   });
 });
 
+describe('find-char motions (f/F/t/T), r, and */#', () => {
+  const type = (editor: VemEditorState, keys: string) => {
+    for (const k of keys) editor.handleKey(k);
+  };
+
+  it('f/F land on the target char, t/T land just before/after it', () => {
+    const editor = new VemEditorState('hello world');
+    type(editor, 'fo');
+    expect(editor.getCursor().character).toBe(4); // first 'o' in "hello"
+
+    editor.setCursor(0, 10);
+    type(editor, 'Fo');
+    expect(editor.getCursor().character).toBe(7); // 'o' in "world"
+
+    editor.setCursor(0, 0);
+    type(editor, 'to');
+    expect(editor.getCursor().character).toBe(3); // just before the 'o'
+
+    editor.setCursor(0, 10);
+    type(editor, 'To');
+    expect(editor.getCursor().character).toBe(8); // just after the 'o'
+  });
+
+  it('a target that is not on the line leaves the cursor untouched', () => {
+    const editor = new VemEditorState('hello');
+    type(editor, 'fz');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 0 });
+  });
+
+  it('df{char}/dt{char} delete inclusive/exclusive of the target', () => {
+    const dfx = new VemEditorState('hello world');
+    type(dfx, 'dfo');
+    expect(dfx.getBuffer().getLine(0)).toBe(' world');
+
+    const dtx = new VemEditorState('hello world');
+    type(dtx, 'dto');
+    expect(dtx.getBuffer().getLine(0)).toBe('o world');
+  });
+
+  it('a failed f/t search aborts the operator with no deletion', () => {
+    const editor = new VemEditorState('hello');
+    type(editor, 'dfz');
+    expect(editor.getBuffer().getLine(0)).toBe('hello');
+  });
+
+  it('dF{char} (backward, inclusive) deletes correctly across the sort boundary', () => {
+    const editor = new VemEditorState('hello world');
+    editor.setCursor(0, 10);
+    type(editor, 'dFo');
+    expect(editor.getBuffer().getLine(0)).toBe('hello w');
+  });
+
+  it('r{char} replaces the char under the cursor without entering INSERT', () => {
+    const editor = new VemEditorState('hello');
+    type(editor, 'rX');
+    expect(editor.getBuffer().getLine(0)).toBe('Xello');
+    expect(editor.getMode()).toBe('NORMAL');
+  });
+
+  it('{count}r{char} replaces that many chars, cursor on the last one', () => {
+    const editor = new VemEditorState('abcdef');
+    type(editor, '3rx');
+    expect(editor.getBuffer().getLine(0)).toBe('xxxdef');
+    expect(editor.getCursor().character).toBe(2);
+  });
+
+  it('r{char} is a no-op when there are not enough characters left', () => {
+    const editor = new VemEditorState('ab');
+    editor.setCursor(0, 0);
+    type(editor, '5rx');
+    expect(editor.getBuffer().getLine(0)).toBe('ab');
+  });
+
+  it('* jumps to the next whole-word match of the word under the cursor', () => {
+    const editor = new VemEditorState('foo bar foo baz');
+    editor.handleKey('*');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 8 });
+  });
+
+  it('* only matches whole words, not substrings', () => {
+    const editor = new VemEditorState('foo foobar foo');
+    editor.handleKey('*');
+    // Should skip "foobar" (not a whole-word match) and land on the last "foo".
+    expect(editor.getCursor()).toEqual({ line: 0, character: 11 });
+  });
+
+  it('# jumps backward to the previous whole-word match', () => {
+    const editor = new VemEditorState('foo bar foo baz');
+    editor.setCursor(0, 8); // on the second "foo"
+    editor.handleKey('#');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 0 });
+  });
+});
+
 describe('global defaults (vemrc-style config applying to future buffers)', () => {
   afterEach(() => {
     // Every test here mutates process-wide static defaults — reset so other
@@ -598,5 +845,80 @@ describe('global defaults (vemrc-style config applying to future buffers)', () =
     VemEditorState.resetDefaults();
     const state = new VemEditorState('x');
     expect(state.layoutConfig.lineNumbers).toBe('none');
+  });
+});
+
+describe('navigation keys (Arrow/Home/End/PageUp/PageDown)', () => {
+  it('move the cursor in INSERT mode without leaving it', () => {
+    const editor = new VemEditorState('hello\nworld');
+    editor.handleKey('i');
+    editor.handleKey('ArrowRight');
+    editor.handleKey('ArrowRight');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 2 });
+    expect(editor.getMode()).toBe('INSERT');
+
+    editor.handleKey('ArrowDown');
+    expect(editor.getCursor()).toEqual({ line: 1, character: 2 });
+
+    editor.handleKey('ArrowLeft');
+    expect(editor.getCursor()).toEqual({ line: 1, character: 1 });
+
+    editor.handleKey('ArrowUp');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 1 });
+    expect(editor.getMode()).toBe('INSERT');
+  });
+
+  it('Home/End move to column 0 / past the last character in INSERT mode', () => {
+    const editor = new VemEditorState('hello');
+    editor.handleKey('i');
+    editor.handleKey('ArrowRight');
+    editor.handleKey('ArrowRight');
+
+    editor.handleKey('End');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 5 });
+
+    editor.handleKey('Home');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 0 });
+  });
+
+  it('typing still works immediately after an arrow-key move in INSERT mode', () => {
+    const editor = new VemEditorState('ac');
+    editor.handleKey('i');
+    editor.handleKey('ArrowRight');
+    editor.handleKey('b');
+    expect(editor.getBuffer().getText()).toBe('abc');
+  });
+
+  it('Arrow keys move the cursor in NORMAL mode like hjkl', () => {
+    const editor = new VemEditorState('hello\nworld');
+    editor.handleKey('ArrowRight');
+    editor.handleKey('ArrowRight');
+    expect(editor.getCursor()).toEqual({ line: 0, character: 2 });
+
+    editor.handleKey('ArrowDown');
+    expect(editor.getCursor()).toEqual({ line: 1, character: 2 });
+
+    editor.handleKey('End');
+    expect(editor.getCursor()).toEqual({ line: 1, character: 4 });
+  });
+
+  it('Arrow keys extend the selection in VISUAL mode', () => {
+    const editor = new VemEditorState('hello world');
+    editor.handleKey('v');
+    editor.handleKey('ArrowRight');
+    editor.handleKey('ArrowRight');
+    const sel = editor.getVisualSelection();
+    expect(sel?.anchor).toEqual({ line: 0, character: 0 });
+    expect(sel?.active).toEqual({ line: 0, character: 2 });
+  });
+
+  it('PageDown/PageUp move a full screen and stay clamped to the buffer', () => {
+    const lines = Array.from({ length: 40 }, (_, i) => `line${i}`).join('\n');
+    const editor = new VemEditorState(lines);
+    editor.handleKey('PageDown');
+    expect(editor.getCursor().line).toBeGreaterThan(0);
+
+    editor.handleKey('PageUp');
+    expect(editor.getCursor().line).toBe(0);
   });
 });

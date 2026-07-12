@@ -33,4 +33,16 @@ describe('ConfigLoader.loadConfigFromObject', () => {
     expect(laterBuffer.layoutConfig.lineNumbers).toBe('absolute');
     expect(laterBuffer.theme.accent).toBe('#ff00ff');
   });
+
+  it('applies clipboard: unnamed/unnamedplus from a vemrc', async () => {
+    const state = new VemEditorState('x');
+    const loader = new ConfigLoader(state);
+    expect(state.getClipboardMode()).toBe('internal');
+
+    await loader.loadConfigFromObject({ clipboard: 'unnamed' }, { register: () => {} });
+    expect(state.getClipboardMode()).toBe('system');
+
+    await loader.loadConfigFromObject({ clipboard: 'internal' }, { register: () => {} });
+    expect(state.getClipboardMode()).toBe('internal');
+  });
 });

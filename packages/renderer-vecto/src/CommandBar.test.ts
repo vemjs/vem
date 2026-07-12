@@ -16,6 +16,21 @@ describe('CommandBar', () => {
     expect(inner.input.x).toBeGreaterThan(6 + inner.prefixText.width - 1);
   });
 
+  it('aligns the prefix glyph and the input text on the same baseline', () => {
+    const state = new VemEditorState('hello');
+    const bar = new CommandBar(state, 400);
+    const inner = bar as unknown as {
+      prefixText: { y: number };
+      input: { y: number; height: number };
+    };
+    // Text draws its baseline at 0.8 * (default lineHeight 20); Input draws
+    // its baseline at 0.66 * its own height. Different conventions, so this
+    // asserts the two absolute baselines actually coincide.
+    const prefixBaseline = inner.prefixText.y + 0.8 * 20;
+    const inputBaseline = inner.input.y + inner.input.height * 0.66;
+    expect(prefixBaseline).toBeCloseTo(inputBaseline, 1);
+  });
+
   it('switches the prefix glyph between : and / from editor state', () => {
     const state = new VemEditorState('hello');
     const bar = new CommandBar(state, 400);

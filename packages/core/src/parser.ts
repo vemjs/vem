@@ -6,6 +6,8 @@ export interface ParsedCommand {
   motion?: string;
   textObject?: string;
   command?: string;
+  /** The target character for f/F/t/T motions or the r{char} command. */
+  findChar?: string;
   isComplete: boolean;
   isValid: boolean;
 }
@@ -13,6 +15,19 @@ export interface ParsedCommand {
 // One shared motion vocabulary: word/WORD, line bounds, file bounds, bracket
 // match. Everything here is valid bare, after an operator, and in Visual mode.
 const motionKeys = ['h', 'j', 'k', 'l', 'w', 'b', 'e', 'W', 'B', 'E', '0', '^', '$', 'G', '%'];
+
+// f/F/t/T take a trailing target character, so — unlike the rest of
+// motionKeys — they're only "complete" once a second key arrives.
+const charMotionKeys = ['f', 'F', 't', 'T'];
+
+/** `f`/`F`/`t`/`T` awaiting or holding their target char, e.g. "f" or "fx". */
+function matchCharMotion(str: string): { motion: string; findChar?: string } | null {
+  if (charMotionKeys.includes(str)) return { motion: str };
+  if (str.length === 2 && charMotionKeys.includes(str[0])) {
+    return { motion: str[0], findChar: str[1] };
+  }
+  return null;
+}
 
 export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCommand {
   const result: ParsedCommand = {
@@ -78,6 +93,16 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       result.count = count1;
       result.motion = remStr;
       result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+
+    const visualCharMotion = matchCharMotion(remStr);
+    if (visualCharMotion) {
+      result.count = count1;
+      result.motion = visualCharMotion.motion;
+      result.findChar = visualCharMotion.findChar;
+      result.isComplete = !!visualCharMotion.findChar;
       result.isValid = true;
       return result;
     }
@@ -162,6 +187,15 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
+    const opCharMotion = matchCharMotion(remOpStr);
+    if (opCharMotion) {
+      result.motion = opCharMotion.motion;
+      result.findChar = opCharMotion.findChar;
+      result.isComplete = !!opCharMotion.findChar;
+      result.isValid = true;
+      return result;
+    }
+
     result.isValid = false;
     result.isComplete = true;
     return result;
@@ -186,6 +220,29 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
     const singleKeyMotions = motionKeys;
     if (singleKeyMotions.includes(remNormalStr)) {
       result.motion = remNormalStr;
+      result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+
+    const normalCharMotion = matchCharMotion(remNormalStr);
+    if (normalCharMotion) {
+      result.motion = normalCharMotion.motion;
+      result.findChar = normalCharMotion.findChar;
+      result.isComplete = !!normalCharMotion.findChar;
+      result.isValid = true;
+      return result;
+    }
+
+    // r{char}: replace the char(s) under the cursor — awaits its target too.
+    if (remNormalStr === 'r') {
+      result.isComplete = false;
+      result.isValid = true;
+      return result;
+    }
+    if (remNormalStr.length === 2 && remNormalStr[0] === 'r') {
+      result.command = 'r';
+      result.findChar = remNormalStr[1];
       result.isComplete = true;
       result.isValid = true;
       return result;
@@ -216,6 +273,8 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       '/',
       'n',
       'N',
+      '*',
+      '#',
       'Escape',
       // Vim scroll motions (half/full page, single line)
       '<C-d>',

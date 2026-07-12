@@ -3,9 +3,17 @@ import type { IRenderer } from '@vectojs/core';
 import type { VemEditorState } from '@vemjs/core';
 
 const PREFIX_X = 6;
-const PREFIX_Y = 7;
+const INPUT_Y = 2;
+const INPUT_HEIGHT = 25;
 const INPUT_PADDING = 2;
 const INPUT_GAP = 1;
+// Text.render() draws its baseline at 0.8 * lineHeight (default lineHeight
+// 20, unrelated to font size); Input.render() draws its baseline at 0.66 *
+// its own height. Different conventions in @vectojs/ui — PREFIX_Y is solved
+// so the ':' lands on the exact same absolute baseline as the input text
+// instead of visibly sitting a few px below it.
+const PREFIX_TEXT_LINE_HEIGHT = 20; // Text's default; not overridden below
+const PREFIX_Y = INPUT_Y + INPUT_HEIGHT * 0.66 - PREFIX_TEXT_LINE_HEIGHT * 0.8;
 
 export class CommandBar extends UIComponent {
   private editorState: VemEditorState;
@@ -29,7 +37,7 @@ export class CommandBar extends UIComponent {
 
     this.input = new Input({
       width: width - 20,
-      height: 25,
+      height: INPUT_HEIGHT,
       font: '14px monospace',
       border: 'transparent',
       padding: INPUT_PADDING,
@@ -56,7 +64,7 @@ export class CommandBar extends UIComponent {
 
   private repositionInput(): void {
     const x = PREFIX_X + this.prefixText.width + INPUT_GAP;
-    this.input.setPosition(x, 2);
+    this.input.setPosition(x, INPUT_Y);
     this.input.width = Math.max(1, this.width - x - 4);
   }
 

@@ -152,6 +152,10 @@ export class VemEditorEntity extends UIComponent {
         'ArrowDown',
         'ArrowLeft',
         'ArrowRight',
+        'Home',
+        'End',
+        'PageUp',
+        'PageDown',
         'Tab',
         'Backspace',
         'Escape',
@@ -165,9 +169,28 @@ export class VemEditorEntity extends UIComponent {
       this.updateFromState();
     });
 
+    // System-clipboard wiring for `:set clipboard=unnamed` — core stays
+    // DOM-free, so it only calls write() (never no-ops unless the mode is
+    // 'system') and expects fresh reads pushed in, since navigator.clipboard
+    // is async everywhere. Gaining focus is the natural refresh point: it's
+    // exactly when the user is about to `p` something they copied elsewhere.
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      this.editorState.setClipboardProvider({
+        write: (text: string) => {
+          navigator.clipboard.writeText(text).catch(() => {});
+        },
+      });
+    }
+
     this.on('focus', () => {
       this.isFocused = true;
       this.scene?.markDirty();
+      if (this.editorState.getClipboardMode() === 'system' && navigator.clipboard) {
+        navigator.clipboard
+          .readText()
+          .then((text) => this.editorState.setSystemClipboardText(text))
+          .catch(() => {});
+      }
     });
 
     this.on('blur', () => {

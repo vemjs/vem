@@ -24,6 +24,7 @@ export type { ParsedCommand } from './parser';
 export { VemEditorState } from './editor';
 export type {
   RegisterContent,
+  ClipboardProvider,
   VisualType,
   VisualSelection,
   Diagnostic,

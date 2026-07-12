@@ -9,6 +9,8 @@ export interface VemConfig {
   }>;
   theme?: any;
   layout?: any;
+  /** Vim's real option name/values — `unnamed`/`unnamedplus` route y/d/c/x/p/P through the OS clipboard. */
+  clipboard?: 'unnamed' | 'unnamedplus' | 'internal';
 }
 
 export class ConfigLoader {
@@ -30,6 +32,10 @@ export class ConfigLoader {
     if (config.layout) {
       VemEditorState.setDefaultLayoutConfig(config.layout);
       this.editorState.setLayoutConfig(config.layout);
+    }
+
+    if (config.clipboard) {
+      this.editorState.setClipboardMode(config.clipboard === 'internal' ? 'internal' : 'system');
     }
 
     if (config.keybindings) {
