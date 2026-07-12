@@ -266,3 +266,162 @@ describe('VemWorkspace.switchToBuffer', () => {
     expect(workspace.getActiveBufferId()).toBe(first);
   });
 });
+
+describe('VemWorkspace buffer snapshot/restore', () => {
+  const stubScene = (workspace: VemWorkspace) => {
+    Object.defineProperty(workspace, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+  };
+
+  it('snapshots every buffer with the active one flagged', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    stubScene(workspace);
+    workspace.openBuffer('two', 'b.ts');
+
+    const snapshot = workspace.getBuffersSnapshot();
+    expect(snapshot).toEqual([
+      { label: 'untitled', text: 'one', active: false },
+      { label: 'b.ts', text: 'two', active: true },
+    ]);
+  });
+
+  it('restores a snapshot, replacing the default empty buffer', () => {
+    const workspace = new VemWorkspace(800, 600, '');
+    stubScene(workspace);
+
+    workspace.restoreBuffersSnapshot([
+      { label: 'a.ts', text: 'alpha', active: false },
+      { label: 'b.ts', text: 'beta', active: true },
+    ]);
+
+    const buffers = (workspace as unknown as { buffers: { label: string }[] }).buffers;
+    expect(buffers.map((b) => b.label)).toEqual(['a.ts', 'b.ts']);
+    expect(workspace.getActiveLayout()?.getActiveState()?.getText()).toBe('beta');
+  });
+
+  it('does nothing on an empty snapshot', () => {
+    const workspace = new VemWorkspace(800, 600, 'one');
+    stubScene(workspace);
+
+    workspace.restoreBuffersSnapshot([]);
+
+    expect(workspace.getActiveLayout()?.getActiveState()?.getText()).toBe('one');
+  });
+});
+
+describe('VemWorkspace.isActiveBufferPristine', () => {
+  const stubScene = (workspace: VemWorkspace) => {
+    Object.defineProperty(workspace, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+  };
+
+  it('is true for a fresh empty buffer', () => {
+    const workspace = new VemWorkspace(800, 600, '');
+    stubScene(workspace);
+    expect(workspace.isActiveBufferPristine()).toBe(true);
+  });
+
+  it('is false once the buffer has been typed into', () => {
+    const workspace = new VemWorkspace(800, 600, '');
+    stubScene(workspace);
+    workspace.getActiveLayout()!.getActiveState()!.handleKey('i');
+    workspace.getActiveLayout()!.getActiveState()!.handleKey('x');
+    expect(workspace.isActiveBufferPristine()).toBe(false);
+  });
+
+  it('is false for a buffer opened with content', () => {
+    const workspace = new VemWorkspace(800, 600, 'hello');
+    stubScene(workspace);
+    expect(workspace.isActiveBufferPristine()).toBe(false);
+  });
+});
+
+describe('WorkspaceExplorer.openFileBuffer replacing a pristine tab', () => {
+  it('replaces an untouched untitled buffer instead of stacking a new tab', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    const workspace = explorer.getWorkspace();
+    Object.defineProperty(workspace, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+
+    const pristineId = workspace.getActiveBufferId();
+    explorer.openFileBuffer('const x = 1;', 'a.ts');
+
+    const buffers = (workspace as unknown as { buffers: { id: string; label: string }[] }).buffers;
+    expect(buffers.length).toBe(1);
+    expect(buffers.map((b) => b.label)).toEqual(['a.ts']);
+    expect(buffers[0].id).not.toBe(pristineId);
+  });
+
+  it('opens a second file in a new tab once the first has real content', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    const workspace = explorer.getWorkspace();
+    Object.defineProperty(workspace, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+
+    explorer.openFileBuffer('const x = 1;', 'a.ts');
+    explorer.openFileBuffer('const y = 2;', 'b.ts');
+
+    const buffers = (workspace as unknown as { buffers: { label: string }[] }).buffers;
+    expect(buffers.map((b) => b.label)).toEqual(['a.ts', 'b.ts']);
+  });
+});
+
+describe('WorkspaceExplorer.closeWorkspace', () => {
+  it('is a no-op when no folder is open', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    // Should not throw with no treeView to close.
+    explorer.closeWorkspace();
+  });
+
+  it('restores the Dir/File buttons and drops the file-tree once a folder is "open"', async () => {
+    const { TreeView } = await import('@vectojs/ui');
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    Object.defineProperty(explorer, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+
+    const inner = explorer as unknown as {
+      treeView: unknown;
+      leftPanel: { add: (e: unknown) => void; remove: (e: unknown) => void; children: unknown[] };
+      openBtn: unknown;
+      openFileBtn: unknown;
+      closeWorkspaceBtn: unknown;
+      fsHandler: unknown;
+    };
+
+    // Simulate what handleOpenFolder() does once a directory picker resolves
+    // (no window.showDirectoryPicker in the test environment to drive the
+    // real flow) — swap the Dir/File buttons for a tree + close button.
+    const tree = new TreeView({ nodes: [], width: 240, height: 560 });
+    inner.leftPanel.remove(inner.openBtn);
+    inner.leftPanel.remove(inner.openFileBtn);
+    inner.leftPanel.add(inner.closeWorkspaceBtn);
+    inner.leftPanel.add(tree);
+    inner.treeView = tree;
+    const fsHandlerBeforeClose = inner.fsHandler;
+
+    explorer.closeWorkspace();
+
+    expect(inner.treeView).toBeNull();
+    expect(inner.leftPanel.children).toContain(inner.openBtn);
+    expect(inner.leftPanel.children).toContain(inner.openFileBtn);
+    expect(inner.leftPanel.children).not.toContain(tree);
+    expect(inner.leftPanel.children).not.toContain(inner.closeWorkspaceBtn);
+    // A fresh FileSystemHandler — a same-named file in a newly opened folder
+    // must not resolve through the previous folder's stale handle.
+    expect(inner.fsHandler).not.toBe(fsHandlerBeforeClose);
+  });
+});

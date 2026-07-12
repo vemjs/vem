@@ -123,6 +123,53 @@ export class VemWorkspace extends UIComponent {
   }
 
   /**
+   * True when the active buffer is untouched (Vim's own intro-splash
+   * condition: unmodified, empty, single line) — safe for a caller like
+   * "open file" to replace in place instead of stacking a new tab next to
+   * an empty "untitled" one nobody asked to keep.
+   */
+  public isActiveBufferPristine(): boolean {
+    return this.getActiveLayout()?.getActiveState()?.shouldShowIntro() ?? false;
+  }
+
+  /**
+   * Snapshot every buffer's label, text, and whether it's the active tab —
+   * for a caller to persist across reloads (e.g. `localStorage` on the web
+   * build, which has no backing filesystem to reopen from). Only the active
+   * pane's text is captured per buffer; a split layout collapses back to a
+   * single pane on restore, since split state is ephemeral UI, not content.
+   */
+  public getBuffersSnapshot(): { label: string; text: string; active: boolean }[] {
+    return this.buffers.map((b) => ({
+      label: b.label,
+      text: b.layout.getActiveState()?.getText() ?? '',
+      active: b.id === this.tabsComponent.value,
+    }));
+  }
+
+  /**
+   * Replace all buffers with a previously captured snapshot. No-op on an
+   * empty snapshot — callers should fall back to the default empty buffer
+   * rather than leave the workspace with zero tabs.
+   */
+  public restoreBuffersSnapshot(
+    snapshot: { label: string; text: string; active: boolean }[],
+  ): void {
+    if (snapshot.length === 0) return;
+    const existing = [...this.buffers];
+    let activeId: string | undefined;
+    for (const entry of snapshot) {
+      const id = this.openBuffer(entry.text, entry.label);
+      if (entry.active) activeId = id;
+    }
+    for (const b of existing) {
+      this.tabsComponent.remove(b.layout);
+    }
+    this.buffers = this.buffers.filter((b) => !existing.includes(b));
+    this.syncTabs(activeId ?? this.buffers[0]?.id);
+  }
+
+  /**
    * Focus a tab by its stable id (e.g. a caller that opened several buffers
    * in sequence — each open leaves the newest one active — needs to return
    * to an earlier one, such as Vim's `+<lnum>` applying to the first file

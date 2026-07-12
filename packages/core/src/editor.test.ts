@@ -345,6 +345,61 @@ describe('command mode editing', () => {
 
     expect(forces).toEqual([false, false, true, true]);
   });
+
+  it('refuses an unforced :q on a modified buffer with E37', () => {
+    const editor = new VemEditorState('x');
+    let quits = 0;
+    editor.onQuit(() => quits++);
+
+    editor.setMode('INSERT');
+    editor.handleKey('y');
+    editor.setMode('NORMAL');
+
+    editor.handleKey(':');
+    editor.setCommandText('q');
+    editor.handleKey('Enter');
+
+    expect(quits).toBe(0);
+    expect(editor.statusMessage).toBe('E37: No write since last change (add ! to override)');
+  });
+
+  it(':q! forces past E37 on a modified buffer', () => {
+    const editor = new VemEditorState('x');
+    let quits = 0;
+    editor.onQuit(() => quits++);
+
+    editor.setMode('INSERT');
+    editor.handleKey('y');
+    editor.setMode('NORMAL');
+
+    editor.handleKey(':');
+    editor.setCommandText('q!');
+    editor.handleKey('Enter');
+
+    expect(quits).toBe(1);
+  });
+
+  it(':w clears the modified flag so a later :q succeeds without force', () => {
+    const editor = new VemEditorState('x');
+    let quits = 0;
+    editor.onSave(() => {});
+    editor.onQuit(() => quits++);
+
+    editor.setMode('INSERT');
+    editor.handleKey('y');
+    editor.setMode('NORMAL');
+    expect(editor.modified).toBe(true);
+
+    editor.handleKey(':');
+    editor.setCommandText('w');
+    editor.handleKey('Enter');
+    expect(editor.modified).toBe(false);
+
+    editor.handleKey(':');
+    editor.setCommandText('q');
+    editor.handleKey('Enter');
+    expect(quits).toBe(1);
+  });
 });
 
 describe('macro recording and replay', () => {

@@ -252,6 +252,13 @@ export class VemEditorState {
   }
 
   private triggerSave(): void {
+    // Optimistic clear, matching Vim's own UX: `:w` marks the buffer clean
+    // immediately rather than waiting on a save callback that may be async
+    // (e.g. renderer-vecto's File System Access write). A failed save still
+    // surfaces its own status message (see WorkspaceExplorer's onSave
+    // handler) — it just doesn't re-arm the `:q` E37 guard, a known,
+    // narrow gap versus real Vim's synchronous-write guarantee.
+    this.modified = false;
     for (const cb of this.saveCallbacks) {
       cb();
     }
@@ -1184,7 +1191,13 @@ export class VemEditorState {
       // `quit`/`exit` aren't real Vim commands (Vim only has `:q`), but
       // they're what newcomers instinctively type — accepting them narrows
       // that surprise gap instead of bouncing new users off an E492.
-      this.triggerQuit(force);
+      // Real Vim's E37 guard: an unforced quit on a modified buffer refuses
+      // rather than silently discarding edits; `:q!`/`:quit!`/`:exit!` force it.
+      if (!force && this.modified) {
+        this.statusMessage = 'E37: No write since last change (add ! to override)';
+      } else {
+        this.triggerQuit(force);
+      }
     } else if (base === 'wq' || base === 'x') {
       this.triggerSave();
       this.triggerQuit(force);

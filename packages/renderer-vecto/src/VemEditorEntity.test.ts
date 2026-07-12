@@ -513,3 +513,57 @@ describe('VemEditorEntity mouse wheel scrolling (Vim mouse=a)', () => {
     expect(entity.scrollY).toBe(0);
   });
 });
+
+describe('VemEditorEntity horizontal scroll (long lines keep the cursor visible)', () => {
+  it('does not scroll when the cursor is within the viewport', () => {
+    const state = new VemEditorState('short line');
+    const entity = new VemEditorEntity(state) as any;
+    state.setCursor(0, 5);
+    entity.updateFromState();
+    expect(entity.scrollX).toBe(0);
+  });
+
+  it('scrolls right to keep the cursor visible on a line longer than the viewport', () => {
+    const longLine = 'x'.repeat(200);
+    const state = new VemEditorState(longLine);
+    const entity = new VemEditorEntity(state) as any;
+    state.setCursor(0, 150);
+    entity.updateFromState();
+
+    // Cursor must land inside [0, width) once scrollX is applied — this is
+    // the actual bug: before scrollX existed, the cursor rendered far past
+    // the right edge and was simply never visible.
+    const cursorX = entity.gutterWidth() + 5 + (150 - entity.scrollX) * entity.charWidth;
+    expect(entity.scrollX).toBeGreaterThan(0);
+    expect(cursorX).toBeGreaterThanOrEqual(0);
+    expect(cursorX).toBeLessThan(entity.width);
+  });
+
+  it('scrolls back left once the cursor returns to an earlier column', () => {
+    const longLine = 'x'.repeat(200);
+    const state = new VemEditorState(longLine);
+    const entity = new VemEditorEntity(state) as any;
+    state.setCursor(0, 150);
+    entity.updateFromState();
+    expect(entity.scrollX).toBeGreaterThan(0);
+
+    state.setCursor(0, 2);
+    entity.updateFromState();
+    expect(entity.scrollX).toBe(2);
+  });
+
+  it('keeps the click-to-cursor hit test correct while horizontally scrolled', () => {
+    const longLine = 'x'.repeat(200);
+    const state = new VemEditorState(longLine);
+    const entity = new VemEditorEntity(state) as any;
+    state.setCursor(0, 150);
+    entity.updateFromState();
+    const scrollX = entity.scrollX;
+
+    // Clicking at the on-screen X for column 150 (post-scroll) must resolve
+    // back to buffer column 150, not the unscrolled raw pixel column.
+    const localX = entity.gutterWidth() + 5 + (150 - scrollX) * entity.charWidth;
+    entity.emit('pointerdown', { localX, localY: 10 });
+    expect(state.getCursor().character).toBe(150);
+  });
+});

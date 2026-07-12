@@ -3,6 +3,9 @@ import type { IRenderer } from '@vectojs/core';
 import { VemWorkspace } from './Workspace';
 import { FileSystemHandler } from './FileSystemHandler';
 
+/** Height reserved above the file tree for the "Close" workspace-switch button. */
+const TREE_HEADER_HEIGHT = 34;
+
 export class WorkspaceExplorer extends UIComponent {
   private panelGroup: PanelGroup;
   private leftPanel: Panel;
@@ -11,6 +14,7 @@ export class WorkspaceExplorer extends UIComponent {
   private treeView: TreeView | null = null;
   private openBtn: Button;
   private openFileBtn: Button;
+  private closeWorkspaceBtn: Button;
   private fsHandler: FileSystemHandler;
   /** When true the file-tree sidebar is force-hidden regardless of theme layout. */
   private sidebarHidden = false;
@@ -36,27 +40,54 @@ export class WorkspaceExplorer extends UIComponent {
 
     this.workspace = new VemWorkspace(width * 0.8, height, initialText);
 
-    this.openBtn = new Button('Open Folder', {
+    // Square icon buttons, side by side — not the old full-width "Open
+    // Folder"/"Open File" pills. Labels stay short real words (not bare
+    // letters or emoji) so the shadow <button aria-label> Button projects
+    // (see getA11yAttributes) stays meaningful to screen readers, since
+    // Button has no separate icon-vs-accessible-name concept.
+    const SIDEBAR_BTN_SIZE = 44;
+    const SIDEBAR_BTN_GAP = 8;
+
+    this.openBtn = new Button('Dir', {
       onClick: () => this.handleOpenFolder(),
       bg: '#1e293b', // slate-800
       hoverBg: '#334155',
-      font: '14px monospace',
+      font: '13px monospace',
       color: '#e2e8f0',
+      radius: 4,
+      width: SIDEBAR_BTN_SIZE,
+      height: SIDEBAR_BTN_SIZE,
     });
-    this.openBtn.width = 120;
-    this.openBtn.height = 35;
     this.openBtn.setPosition(15, 15);
 
-    this.openFileBtn = new Button('Open File', {
+    this.openFileBtn = new Button('File', {
       onClick: () => this.handleOpenFile(),
       bg: '#1e293b',
       hoverBg: '#334155',
-      font: '14px monospace',
+      font: '13px monospace',
       color: '#e2e8f0',
+      radius: 4,
+      width: SIDEBAR_BTN_SIZE,
+      height: SIDEBAR_BTN_SIZE,
     });
-    this.openFileBtn.width = 120;
-    this.openFileBtn.height = 35;
-    this.openFileBtn.setPosition(15, 58);
+    this.openFileBtn.setPosition(15 + SIDEBAR_BTN_SIZE + SIDEBAR_BTN_GAP, 15);
+
+    // "Close" the open folder — restores the Dir/File buttons so a different
+    // folder can be opened. Otherwise handleOpenFolder() is unreachable once
+    // a directory is open: opening a folder removes openBtn from the panel
+    // and nothing ever puts it back, an issue that showed up as "how do you
+    // switch workspaces?" with no path to answer it.
+    this.closeWorkspaceBtn = new Button('Close', {
+      onClick: () => this.closeWorkspace(),
+      bg: '#1e293b',
+      hoverBg: '#334155',
+      font: '11px monospace',
+      color: '#94a3b8',
+      radius: 4,
+      width: 60,
+      height: 22,
+    });
+    this.closeWorkspaceBtn.setPosition(8, 6);
 
     this.leftPanel.add(this.openBtn);
     this.leftPanel.add(this.openFileBtn);
@@ -96,6 +127,7 @@ export class WorkspaceExplorer extends UIComponent {
 
   private addSidebarContent(panel: Panel): void {
     if (this.treeView) {
+      panel.add(this.closeWorkspaceBtn);
       panel.add(this.treeView);
     } else {
       panel.add(this.openBtn);
@@ -142,7 +174,7 @@ export class WorkspaceExplorer extends UIComponent {
       this.treeView = new TreeView({
         nodes,
         width: this.leftPanel.width,
-        height: this.height - 10,
+        height: this.height - TREE_HEADER_HEIGHT - 10,
         font: '13px monospace',
         color: '#cbd5e1',
         selectedColor: 'rgba(56, 189, 248, 0.2)',
@@ -156,8 +188,11 @@ export class WorkspaceExplorer extends UIComponent {
           }
         },
       });
+      this.treeView.setPosition(0, TREE_HEADER_HEIGHT);
 
       this.leftPanel.remove(this.openBtn); // remove() detaches a11y itself
+      this.leftPanel.remove(this.openFileBtn);
+      this.leftPanel.add(this.closeWorkspaceBtn);
       this.leftPanel.add(this.treeView);
 
       // Trigger directory opened callbacks
@@ -174,11 +209,41 @@ export class WorkspaceExplorer extends UIComponent {
   }
 
   /**
-   * Open file content in a new tab labeled with the file name, and wire `:w`
-   * on that buffer to write back to disk through the File System Access API.
+   * Close the open folder and restore the Dir/File buttons, so a different
+   * workspace can be opened. Open buffers/tabs are left exactly as they are
+   * — closing the tree is about the file-picker source, not the editor
+   * state — but a fresh `FileSystemHandler` drops the old folder's file
+   * handles so a same-named file in a newly opened folder can't resolve to
+   * the previous folder's handle.
+   */
+  public closeWorkspace(): void {
+    if (!this.treeView) return;
+    this.leftPanel.remove(this.treeView);
+    this.leftPanel.remove(this.closeWorkspaceBtn);
+    this.treeView = null;
+    this.fsHandler = new FileSystemHandler();
+
+    const activeState = this.getActiveEditorState();
+    if (activeState) activeState.projectFiles = [];
+
+    this.leftPanel.add(this.openBtn);
+    this.leftPanel.add(this.openFileBtn);
+    this.scene?.markDirty();
+  }
+
+  /**
+   * Open file content in a tab labeled with the file name, and wire `:w` on
+   * that buffer to write back to disk through the File System Access API.
+   * If the active tab is still untouched (Vim's intro-splash condition), the
+   * file replaces it in place — matching `:e` in a fresh Vim session —
+   * rather than stacking a new tab next to an empty "untitled" one.
    */
   public openFileBuffer(content: string, label: string, fileHandle?: FileSystemFileHandle): string {
+    const pristineId = this.workspace.isActiveBufferPristine()
+      ? this.workspace.getActiveBufferId()
+      : null;
     const id = this.workspace.openBuffer(content, label);
+    if (pristineId) this.workspace.closeTab(pristineId);
     const state = this.workspace.getActiveLayout()?.getActiveState();
     if (state && fileHandle) {
       state.onSave(async () => {
@@ -288,10 +353,11 @@ export class WorkspaceExplorer extends UIComponent {
 
     if (
       this.treeView &&
-      (this.treeView.width !== this.leftPanel.width || this.treeView.height !== this.height)
+      (this.treeView.width !== this.leftPanel.width ||
+        this.treeView.height !== this.height - TREE_HEADER_HEIGHT)
     ) {
       this.treeView.width = this.leftPanel.width;
-      this.treeView.height = this.height;
+      this.treeView.height = this.height - TREE_HEADER_HEIGHT;
     }
 
     if (
@@ -314,6 +380,7 @@ export class WorkspaceExplorer extends UIComponent {
     this.openBtn.bg = theme.statusBarBg;
     this.openBtn.hoverBg = theme.statusBarBg;
     this.openBtn.color = theme.fg;
+    this.closeWorkspaceBtn.color = theme.fg;
 
     if (this.treeView) {
       /* eslint-disable-next-line no-underscore-dangle */

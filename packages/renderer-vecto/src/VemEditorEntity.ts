@@ -14,6 +14,7 @@ export class VemEditorEntity extends UIComponent {
   private charWidth = 8.4;
   private lineHeight = 21; // Extended row height for a premium readable spacing
   private scrollY = 0; // scroll offset in lines
+  private scrollX = 0; // scroll offset in characters — keeps the cursor visible on long lines (Vim's 'nowrap' sidescroll)
   private autocompleteItems: { label: string; detail?: string }[] = [];
   private selectedAutocompleteIndex = 0;
   private isFocused = false;
@@ -207,7 +208,7 @@ export class VemEditorEntity extends UIComponent {
       const relativeY = localY - contentOffsetY + this.scrollY * this.lineHeight - 5;
       const line = Math.floor(relativeY / this.lineHeight);
 
-      const relativeX = localX - gutterWidth - 5;
+      const relativeX = localX - gutterWidth - 5 + this.scrollX * this.charWidth;
       const character = Math.round(relativeX / this.charWidth);
       return { line, character };
     };
@@ -395,6 +396,18 @@ export class VemEditorEntity extends UIComponent {
       this.scrollY = cursor.line;
     }
 
+    // 1b. Same for horizontal: a line longer than the viewport must not push
+    // the cursor off-screen. Vim's default without 'wrap' sidescrolls the
+    // window rather than clipping the cursor — this was previously missing
+    // entirely (scrollX didn't exist), so a long line just rendered the
+    // cursor past the right edge, invisible.
+    const visibleCols = Math.floor((this.width - this.gutterWidth() - 10) / this.charWidth);
+    if (cursor.character >= this.scrollX + visibleCols) {
+      this.scrollX = cursor.character - visibleCols + 1;
+    } else if (cursor.character < this.scrollX) {
+      this.scrollX = cursor.character;
+    }
+
     // 2. Mount/unmount the command bar based on mode
     const hasCommandBar = this.editorState.getMode() === 'COMMAND';
     this.commandBar.updateWidth(this.width);
@@ -534,6 +547,13 @@ export class VemEditorEntity extends UIComponent {
       r.fillText('~', 5, baselineOf(l), this.editorFont, nonText);
     }
 
+    // Clip everything from here to the cursor draw to the content area right
+    // of the gutter — a horizontally-scrolled long line's leading characters
+    // (now at a negative on-screen X, see scrollX above) would otherwise
+    // paint over the gutter/line-numbers instead of scrolling behind them.
+    r.save();
+    r.clip(gutterWidth, 0, this.width - gutterWidth, this.height);
+
     // 2.7. Draw buffer text directly on the character grid: every glyph run
     // advances by charWidth so caret, click, and selection math always match.
     const highlight = (this.editorState as any).highlightLine as
@@ -550,7 +570,7 @@ export class VemEditorEntity extends UIComponent {
         if (span.text.trim().length > 0) {
           r.fillText(
             span.text,
-            gutterWidth + 5 + col * this.charWidth,
+            gutterWidth + 5 + (col - this.scrollX) * this.charWidth,
             baseY,
             this.editorFont,
             span.color || theme.fg,
@@ -574,7 +594,7 @@ export class VemEditorEntity extends UIComponent {
       }
 
       const drawSelRect = (lineIdx: number, startChar: number, endChar: number) => {
-        const x = gutterWidth + 5 + startChar * this.charWidth;
+        const x = gutterWidth + 5 + (startChar - this.scrollX) * this.charWidth;
         const y = 5 + lineIdx * this.lineHeight;
         const w = (endChar - startChar) * this.charWidth;
         const h = this.lineHeight;
@@ -622,7 +642,7 @@ export class VemEditorEntity extends UIComponent {
       // If endCharacter is same or not specified, underline at least 1 character width
       const endChar = Math.max(startChar + 1, Math.min(diag.endCharacter, lineText.length));
 
-      const startX = gutterWidth + 5 + startChar * this.charWidth;
+      const startX = gutterWidth + 5 + (startChar - this.scrollX) * this.charWidth;
       const y = 5 + diag.line * this.lineHeight + this.lineHeight - 2;
       const length = (endChar - startChar) * this.charWidth;
 
@@ -642,7 +662,7 @@ export class VemEditorEntity extends UIComponent {
 
     // 4. Draw Vim cursor
     const cursor = this.editorState.getCursor();
-    const cursorX = gutterWidth + 5 + cursor.character * this.charWidth;
+    const cursorX = gutterWidth + 5 + (cursor.character - this.scrollX) * this.charWidth;
     const cursorY = 5 + cursor.line * this.lineHeight;
     const mode = this.editorState.getMode();
 
@@ -668,6 +688,7 @@ export class VemEditorEntity extends UIComponent {
       r.stroke('#475569', 1); // slate-600 border for a non-current window
     }
 
+    r.restore(); // Restore content clip
     r.restore(); // Restore scroll transform
 
     // 4.5. Vim intro splash — centered, shown only on a fresh empty buffer and
