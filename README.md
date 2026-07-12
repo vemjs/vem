@@ -24,7 +24,8 @@ Zero DOM overhead in the editing area — every glyph, cursor, and highlight is 
 - **Full Vim modal editing** — NORMAL / INSERT / VISUAL / COMMAND with motions, operators, text objects
 - **LSP-native** — built-in JSON-RPC 2.0 client, completion, hover, diagnostics
 - **Plugin system** — TypeScript-first plugin API with custom keybindings and event hooks
-- **Web & Tauri** — runs in any browser today, Tauri desktop planned
+- **Web & desktop** — runs in the browser at [vem.run](https://vem.run), or natively via the
+  [Tauri desktop shell](https://github.com/vemjs/vem-desktop)
 
 ## Getting Started
 
