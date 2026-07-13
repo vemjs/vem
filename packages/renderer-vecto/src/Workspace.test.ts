@@ -461,6 +461,7 @@ describe('WorkspaceExplorer pluggable fs provider', () => {
     expect(tree).not.toBeNull();
 
     // Drive the tree's onSelect the way a click would.
+    /* eslint-disable-next-line no-underscore-dangle */
     const onSelect = (tree as { _onSelect?: (n: unknown) => void | Promise<void> })._onSelect;
     expect(onSelect).toBeDefined();
     await onSelect!({ id: '/abs/path/a.ts', label: 'a.ts' });
