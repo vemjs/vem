@@ -7,6 +7,13 @@ export { CommandBar } from './CommandBar';
 export { WorkspaceLayout, EditorPane, type PaneNode } from './WorkspaceLayout';
 export { VemWorkspace } from './Workspace';
 export { WorkspaceExplorer } from './WorkspaceExplorer';
+export {
+  createWebFsProvider,
+  type WorkspaceFsProvider,
+  type PickedDirectory,
+  type PickedFile,
+} from './FsProvider';
+export { FileSystemHandler, fileIcon } from './FileSystemHandler';
 export { CTRL_VIM_KEYS, PREVENT_CTRL_KEYS } from './vimKeys';
 
 export class VectoRenderer {

@@ -384,8 +384,7 @@ describe('WorkspaceExplorer.closeWorkspace', () => {
     explorer.closeWorkspace();
   });
 
-  it('restores the Dir/File buttons and drops the file-tree once a folder is "open"', async () => {
-    const { TreeView } = await import('@vectojs/ui');
+  it('restores the Dir/File buttons and drops the file-tree once a folder is open', async () => {
     const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
     const explorer = new WorkspaceExplorer(800, 600, '');
     Object.defineProperty(explorer, 'scene', {
@@ -395,23 +394,19 @@ describe('WorkspaceExplorer.closeWorkspace', () => {
 
     const inner = explorer as unknown as {
       treeView: unknown;
-      leftPanel: { add: (e: unknown) => void; remove: (e: unknown) => void; children: unknown[] };
+      leftPanel: { children: unknown[] };
       openBtn: unknown;
       openFileBtn: unknown;
       closeWorkspaceBtn: unknown;
-      fsHandler: unknown;
     };
 
-    // Simulate what handleOpenFolder() does once a directory picker resolves
-    // (no window.showDirectoryPicker in the test environment to drive the
-    // real flow) — swap the Dir/File buttons for a tree + close button.
-    const tree = new TreeView({ nodes: [], width: 240, height: 560 });
-    inner.leftPanel.remove(inner.openBtn);
-    inner.leftPanel.remove(inner.openFileBtn);
-    inner.leftPanel.add(inner.closeWorkspaceBtn);
-    inner.leftPanel.add(tree);
-    inner.treeView = tree;
-    const fsHandlerBeforeClose = inner.fsHandler;
+    explorer.openDirectory({
+      nodes: [{ id: 'a.ts', label: 'a.ts' }],
+      readFile: async () => 'const x = 1;',
+    });
+    const tree = inner.treeView;
+    expect(tree).not.toBeNull();
+    expect(explorer.getOpenDirectory()).not.toBeNull();
 
     explorer.closeWorkspace();
 
@@ -420,8 +415,121 @@ describe('WorkspaceExplorer.closeWorkspace', () => {
     expect(inner.leftPanel.children).toContain(inner.openFileBtn);
     expect(inner.leftPanel.children).not.toContain(tree);
     expect(inner.leftPanel.children).not.toContain(inner.closeWorkspaceBtn);
-    // A fresh FileSystemHandler — a same-named file in a newly opened folder
-    // must not resolve through the previous folder's stale handle.
-    expect(inner.fsHandler).not.toBe(fsHandlerBeforeClose);
+    // The old folder's I/O must be released — a same-named file in a newly
+    // opened folder must not resolve through the previous folder's handles.
+    expect(explorer.getOpenDirectory()).toBeNull();
+  });
+});
+
+describe('WorkspaceExplorer pluggable fs provider', () => {
+  const stubScenes = (explorer: { getWorkspace(): VemWorkspace }) => {
+    const sceneStub = { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} };
+    Object.defineProperty(explorer, 'scene', { configurable: true, value: sceneStub });
+    Object.defineProperty(explorer.getWorkspace(), 'scene', {
+      configurable: true,
+      value: sceneStub,
+    });
+  };
+
+  // `:w` through the command line, then a macrotask flush so the async
+  // onSave callback (which awaits the provider's save) has completed.
+  const runSaveCommand = async (state: {
+    handleKey(k: string): void;
+    setCommandText(t: string): void;
+  }) => {
+    state.handleKey(':');
+    state.setCommandText('w');
+    state.handleKey('Enter');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  it('openDirectory routes tree file opens and :w through the provider I/O', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    stubScenes(explorer);
+
+    const saved: Record<string, string> = {};
+    explorer.openDirectory({
+      nodes: [{ id: '/abs/path/a.ts', label: 'a.ts' }],
+      readFile: async (id) => (id === '/abs/path/a.ts' ? 'const x = 1;' : ''),
+      saveFile: async (id, content) => {
+        saved[id] = content;
+      },
+    });
+
+    const tree = (explorer as unknown as { treeView: unknown }).treeView;
+    expect(tree).not.toBeNull();
+
+    // Drive the tree's onSelect the way a click would.
+    const onSelect = (tree as { _onSelect?: (n: unknown) => void | Promise<void> })._onSelect;
+    expect(onSelect).toBeDefined();
+    await onSelect!({ id: '/abs/path/a.ts', label: 'a.ts' });
+
+    const state = explorer.getActiveEditorState();
+    expect(state.getText()).toBe('const x = 1;');
+    await runSaveCommand(state);
+    expect(saved['/abs/path/a.ts']).toBe('const x = 1;');
+  });
+
+  it('handleOpenFile opens the provider-picked file and wires its save', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    stubScenes(explorer);
+
+    let savedContent: string | null = null;
+    explorer.setFileSystemProvider({
+      pickDirectory: async () => null,
+      pickFile: async () => ({
+        name: 'picked.md',
+        content: '# picked',
+        save: async (text) => {
+          savedContent = text;
+        },
+      }),
+    });
+
+    await explorer.handleOpenFile();
+
+    const workspace = explorer.getWorkspace();
+    const buffers = (workspace as unknown as { buffers: { label: string }[] }).buffers;
+    expect(buffers.map((b) => b.label)).toEqual(['picked.md']);
+    const state = explorer.getActiveEditorState();
+    expect(state.getText()).toBe('# picked');
+    await runSaveCommand(state);
+    expect(savedContent).toBe('# picked');
+  });
+
+  it('a cancelled provider pick leaves the Explorer untouched', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    stubScenes(explorer);
+
+    explorer.setFileSystemProvider({
+      pickDirectory: async () => null,
+      pickFile: async () => null,
+    });
+
+    await explorer.handleOpenFile();
+    const inner = explorer as unknown as {
+      treeView: unknown;
+      leftPanel: { children: unknown[] };
+      openBtn: unknown;
+    };
+    expect(inner.treeView).toBeNull();
+    expect(inner.leftPanel.children).toContain(inner.openBtn);
+    expect(explorer.getOpenDirectory()).toBeNull();
+  });
+
+  it('surfaces a Vim-style error thrown by the save backend as the status message', async () => {
+    const { WorkspaceExplorer } = await import('./WorkspaceExplorer');
+    const explorer = new WorkspaceExplorer(800, 600, '');
+    stubScenes(explorer);
+
+    explorer.openFileBuffer('text', 'ro.txt', async () => {
+      throw new Error("E45: 'readonly' option is set (add ! to override)");
+    });
+    const state = explorer.getActiveEditorState();
+    await runSaveCommand(state);
+    expect(state.statusMessage).toBe("E45: 'readonly' option is set (add ! to override)");
   });
 });

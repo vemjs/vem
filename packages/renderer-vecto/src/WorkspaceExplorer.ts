@@ -1,7 +1,8 @@
 import { UIComponent, PanelGroup, Panel, TreeView, Button } from '@vectojs/ui';
+import type { TreeNode } from '@vectojs/ui';
 import type { IRenderer } from '@vectojs/core';
 import { VemWorkspace } from './Workspace';
-import { FileSystemHandler } from './FileSystemHandler';
+import { createWebFsProvider, type PickedDirectory, type WorkspaceFsProvider } from './FsProvider';
 
 /** Height reserved above the file tree for the "Close" workspace-switch button. */
 const TREE_HEADER_HEIGHT = 34;
@@ -15,19 +16,21 @@ export class WorkspaceExplorer extends UIComponent {
   private openBtn: Button;
   private openFileBtn: Button;
   private closeWorkspaceBtn: Button;
-  private fsHandler: FileSystemHandler;
+  private fsProvider: WorkspaceFsProvider;
+  /** The directory currently backing the file tree, if any. */
+  private openDir: PickedDirectory | null = null;
   /** When true the file-tree sidebar is force-hidden regardless of theme layout. */
   private sidebarHidden = false;
   private openDirectoryCallbacks: ((
-    files: any[],
-    fsHandler: FileSystemHandler,
+    files: TreeNode[],
+    dir: PickedDirectory,
   ) => void | Promise<void>)[] = [];
 
   constructor(width: number, height: number, initialText?: string) {
     super();
     this.width = width;
     this.height = height;
-    this.fsHandler = new FileSystemHandler();
+    this.fsProvider = createWebFsProvider();
 
     this.panelGroup = new PanelGroup({
       direction: 'horizontal',
@@ -104,9 +107,18 @@ export class WorkspaceExplorer extends UIComponent {
   }
 
   public onDidOpenDirectory(
-    cb: (files: any[], fsHandler: FileSystemHandler) => void | Promise<void>,
+    cb: (files: TreeNode[], dir: PickedDirectory) => void | Promise<void>,
   ): void {
     this.openDirectoryCallbacks.push(cb);
+  }
+
+  /**
+   * Replace the picker/IO backend behind the "Dir"/"File" buttons. The
+   * default is the browser's File System Access API, which WebKitGTK (Tauri
+   * on Linux) doesn't implement — desktop shells inject native dialogs here.
+   */
+  public setFileSystemProvider(provider: WorkspaceFsProvider): void {
+    this.fsProvider = provider;
   }
 
   private flattenFiles(nodes: any[]): string[] {
@@ -155,56 +167,64 @@ export class WorkspaceExplorer extends UIComponent {
   }
 
   private async handleOpenFolder(): Promise<void> {
-    if (typeof window === 'undefined' || !(window as any).showDirectoryPicker) {
-      console.warn('File System Access API is not supported in this environment.');
-      return;
+    const picked = await this.fsProvider.pickDirectory();
+    if (!picked) return; // cancelled or unsupported — leave the Explorer as is
+    this.openDirectory(picked);
+  }
+
+  /**
+   * Show `dir`'s tree in the sidebar and route file opens/saves through it.
+   * Public so a host shell can open a directory it resolved itself (e.g. a
+   * CLI argument) without going through the picker.
+   */
+  public openDirectory(dir: PickedDirectory): void {
+    this.openDir = dir;
+    const nodes = dir.nodes;
+
+    // Cache all file paths for search plugins (like Telescope)
+    const fileList = this.flattenFiles(nodes);
+    const activeState = this.getActiveEditorState();
+    if (activeState) {
+      activeState.projectFiles = fileList;
     }
 
-    try {
-      const rootHandle = await (window as any).showDirectoryPicker();
-      const nodes = await this.fsHandler.readDirectory(rootHandle);
-
-      // Cache all file paths for search plugins (like Telescope)
-      const fileList = this.flattenFiles(nodes);
-      const activeState = this.getActiveEditorState();
-      if (activeState) {
-        activeState.projectFiles = fileList;
-      }
-
-      this.treeView = new TreeView({
-        nodes,
-        width: this.leftPanel.width,
-        height: this.height - TREE_HEADER_HEIGHT - 10,
-        font: '13px monospace',
-        color: '#cbd5e1',
-        selectedColor: 'rgba(56, 189, 248, 0.2)',
-        hoverColor: 'rgba(255, 255, 255, 0.05)',
-        onSelect: async (node) => {
-          const fileHandle = this.fsHandler.getFileHandle(node.id);
-          if (fileHandle) {
-            const content = await this.fsHandler.readFile(fileHandle);
-            const label = node.label ?? node.id.split('/').pop() ?? 'file';
-            this.openFileBuffer(content, label, fileHandle);
-          }
-        },
-      });
-      this.treeView.setPosition(0, TREE_HEADER_HEIGHT);
-
-      this.leftPanel.remove(this.openBtn); // remove() detaches a11y itself
-      this.leftPanel.remove(this.openFileBtn);
-      this.leftPanel.add(this.closeWorkspaceBtn);
-      this.leftPanel.add(this.treeView);
-
-      // Trigger directory opened callbacks
-      for (const cb of this.openDirectoryCallbacks) {
+    if (this.treeView) this.leftPanel.remove(this.treeView);
+    this.treeView = new TreeView({
+      nodes,
+      width: this.leftPanel.width,
+      height: this.height - TREE_HEADER_HEIGHT - 10,
+      font: '13px monospace',
+      color: '#cbd5e1',
+      selectedColor: 'rgba(56, 189, 248, 0.2)',
+      hoverColor: 'rgba(255, 255, 255, 0.05)',
+      onSelect: async (node) => {
+        // Directory nodes expand in place; only leaf (file) nodes open.
+        if ((node as { children?: unknown }).children) return;
         try {
-          cb(nodes, this.fsHandler);
-        } catch (e) {
-          console.error('Error executing openDirectory callback:', e);
+          const content = await dir.readFile(node.id);
+          const label = node.label ?? node.id.split('/').pop() ?? 'file';
+          const save = dir.saveFile ? (text: string) => dir.saveFile!(node.id, text) : undefined;
+          this.openFileBuffer(content, label, save);
+        } catch (err) {
+          console.error('Error opening file from tree:', err);
         }
+      },
+    });
+    this.treeView.setPosition(0, TREE_HEADER_HEIGHT);
+
+    this.leftPanel.remove(this.openBtn); // remove() detaches a11y itself
+    this.leftPanel.remove(this.openFileBtn);
+    this.leftPanel.add(this.closeWorkspaceBtn);
+    this.leftPanel.add(this.treeView);
+    this.scene?.markDirty();
+
+    // Trigger directory opened callbacks
+    for (const cb of this.openDirectoryCallbacks) {
+      try {
+        cb(nodes, dir);
+      } catch (e) {
+        console.error('Error executing openDirectory callback:', e);
       }
-    } catch (err) {
-      console.error('Error selecting directory:', err);
     }
   }
 
@@ -212,16 +232,16 @@ export class WorkspaceExplorer extends UIComponent {
    * Close the open folder and restore the Dir/File buttons, so a different
    * workspace can be opened. Open buffers/tabs are left exactly as they are
    * — closing the tree is about the file-picker source, not the editor
-   * state — but a fresh `FileSystemHandler` drops the old folder's file
-   * handles so a same-named file in a newly opened folder can't resolve to
-   * the previous folder's handle.
+   * state — but dropping the `PickedDirectory` releases the old folder's
+   * file handles so a same-named file in a newly opened folder can't
+   * resolve to the previous folder's handle.
    */
   public closeWorkspace(): void {
     if (!this.treeView) return;
     this.leftPanel.remove(this.treeView);
     this.leftPanel.remove(this.closeWorkspaceBtn);
     this.treeView = null;
-    this.fsHandler = new FileSystemHandler();
+    this.openDir = null;
 
     const activeState = this.getActiveEditorState();
     if (activeState) activeState.projectFiles = [];
@@ -233,26 +253,33 @@ export class WorkspaceExplorer extends UIComponent {
 
   /**
    * Open file content in a tab labeled with the file name, and wire `:w` on
-   * that buffer to write back to disk through the File System Access API.
+   * that buffer to `save` (whatever backend the provider gave us).
    * If the active tab is still untouched (Vim's intro-splash condition), the
    * file replaces it in place — matching `:e` in a fresh Vim session —
    * rather than stacking a new tab next to an empty "untitled" one.
    */
-  public openFileBuffer(content: string, label: string, fileHandle?: FileSystemFileHandle): string {
+  public openFileBuffer(
+    content: string,
+    label: string,
+    save?: (content: string) => Promise<void>,
+  ): string {
     const pristineId = this.workspace.isActiveBufferPristine()
       ? this.workspace.getActiveBufferId()
       : null;
     const id = this.workspace.openBuffer(content, label);
     if (pristineId) this.workspace.closeTab(pristineId);
     const state = this.workspace.getActiveLayout()?.getActiveState();
-    if (state && fileHandle) {
+    if (state && save) {
       state.onSave(async () => {
         try {
-          await this.fsHandler.saveFile(fileHandle, state.getText());
+          await save(state.getText());
           state.statusMessage = `"${label}" written`;
         } catch (err) {
-          state.statusMessage = `E212: Can't open file for writing`;
-          console.error('Failed to save file:', err);
+          // A thrown Vim-style error ("E45: ...") is a real status message
+          // from the save backend (e.g. readonly mode) — surface it as is.
+          const msg = err instanceof Error && /^E\d+:/.test(err.message) ? err.message : null;
+          state.statusMessage = msg ?? `E212: Can't open file for writing`;
+          if (!msg) console.error('Failed to save file:', err);
         }
         this.scene?.markDirty();
       });
@@ -265,21 +292,14 @@ export class WorkspaceExplorer extends UIComponent {
    * "Open Folder" so the sidebar can open individual files too.
    */
   public async handleOpenFile(): Promise<void> {
-    if (typeof window === 'undefined' || !(window as any).showOpenFilePicker) {
-      console.warn('File System Access API is not supported in this environment.');
-      return;
-    }
-    try {
-      const [handle] = await (window as any).showOpenFilePicker();
-      if (!handle) return;
-      const content = await this.fsHandler.readFile(handle);
-      this.openFileBuffer(content, handle.name, handle);
-    } catch (err) {
-      // AbortError = user cancelled the picker; not an error worth logging.
-      if ((err as { name?: string })?.name !== 'AbortError') {
-        console.error('Error opening file:', err);
-      }
-    }
+    const picked = await this.fsProvider.pickFile();
+    if (!picked) return; // cancelled or unsupported
+    this.openFileBuffer(picked.content, picked.name, picked.save);
+  }
+
+  /** The directory currently backing the file tree, or null if none open. */
+  public getOpenDirectory(): PickedDirectory | null {
+    return this.openDir;
   }
 
   public getActiveEditorState(): any | null {
