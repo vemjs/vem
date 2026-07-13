@@ -30,8 +30,11 @@ export class CommandBar extends UIComponent {
     // Vim's command line is plain Normal text on the bottom row — no boxed
     // highlight, no gap between the ':' and what you type — so the prefix and
     // the shadow <input> share one font/baseline and sit flush together.
+    // The font must match the Input's exactly (no `bold`): WebKitGTK
+    // synthesizes bold monospace with different metrics, which rendered the
+    // ':' visibly taller than the command text in the Tauri build.
     this.prefixText = new Text(':', {
-      font: 'bold 14px monospace',
+      font: '14px monospace',
     });
     this.prefixText.setPosition(PREFIX_X, PREFIX_Y);
 
