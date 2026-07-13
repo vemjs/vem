@@ -1,5 +1,16 @@
 # @vemjs/renderer-vecto
 
+## 0.4.0
+
+### Minor Changes
+
+- dd6ebe5: Make the Explorer's file/folder pickers pluggable. The sidebar "Dir"/"File" buttons were hardwired to the browser's File System Access API, which WebKitGTK (Tauri on Linux) doesn't implement — in the desktop app they silently did nothing. New `WorkspaceFsProvider` interface (`pickDirectory`/`pickFile`) with the web implementation as the default (`createWebFsProvider()`); host shells inject native dialogs via `WorkspaceExplorer.setFileSystemProvider()`. `openDirectory(dir)` is public so hosts can show a CLI-resolved directory without a picker, and `openFileBuffer`'s third argument is now a plain `save` callback instead of a `FileSystemFileHandle` (breaking for direct callers). `onDidOpenDirectory` callbacks now receive the `PickedDirectory` instead of the internal `FileSystemHandler`. A save backend that throws a Vim-style `E##:` error gets its message surfaced verbatim in the status line.
+
+### Patch Changes
+
+- 13e9468: Fix the command-line `:` prefix rendering taller than the typed command in the Tauri (WebKitGTK) build. The prefix used `bold 14px monospace` while the input uses `14px monospace`; WebKitGTK synthesizes bold monospace with different metrics, so the glyphs didn't line up. The prefix now uses the exact same font as the input — which also matches Vim, whose command line is plain Normal text.
+- 4461923: Fix IME input (Fcitx5, Pinyin/Zhuyin, and other composition-based input methods) being completely unusable. `VemEditorEntity`'s keydown handler had no `isComposing`/`'Process'` guard, so every intermediate composing keystroke was fed straight into the Vim state machine, corrupting the buffer and breaking composition. Composing keydowns are now ignored, and the committed text is inserted via the `'change'` event `@vectojs/core`'s a11y projection already emits once a composition ends.
+
 ## 0.3.0
 
 ### Minor Changes
