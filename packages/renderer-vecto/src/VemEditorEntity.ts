@@ -166,10 +166,22 @@ export class VemEditorEntity extends UIComponent {
         'PageDown',
         'Tab',
         'Backspace',
+        'Delete',
+        'Enter',
         'Escape',
-        ' ',
       ];
-      if (keysToPrevent.includes(key) || ctrlOwnedByEditor) {
+      // Any single printable character (letters, digits, punctuation, space)
+      // is already fully handled by handleKey above — in NORMAL mode 'i'/'a'
+      // switch to INSERT, in INSERT mode it's inserted at the cursor. Without
+      // preventDefault here the keystroke ALSO reaches the focused a11y
+      // shadow <textarea> natively (it edits its own .value for printable
+      // keys, Enter and Delete just like any textarea), firing the 'change'
+      // handler below a second time for the same keystroke — e.g. typing 'i'
+      // in NORMAL mode both switched to INSERT *and* inserted the literal
+      // 'i', and held/rapid 'a' duplicated on every press. That handler must
+      // stay reserved for genuine IME composition commits only.
+      const isPrintable = key.length === 1;
+      if (isPrintable || keysToPrevent.includes(key) || ctrlOwnedByEditor) {
         keyboardEvent.preventDefault();
       }
 

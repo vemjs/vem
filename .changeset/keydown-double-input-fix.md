@@ -1,0 +1,5 @@
+---
+'@vemjs/renderer-vecto': patch
+---
+
+Fix printable keystrokes being delivered twice to the Vim state machine. `VemEditorEntity`'s keydown handler already fed every non-composing key to `handleKey()` unconditionally, but only called `preventDefault()` for a narrow whitelist (arrows, Home/End, Tab, Backspace, Escape, Space) — letters, digits, punctuation, Enter, and Delete were left unprevented. That let the keystroke also reach the focused a11y shadow `<textarea>` natively, which mutated its `.value` and fired the `change` handler added for IME support, redelivering the same character a second time. In NORMAL mode this meant `i`/`a` both switched to INSERT _and_ inserted the literal character, with rapid/held `a` compounding on every press; in INSERT mode, Enter could additionally leak a literal `\n` into the buffer instead of a clean line split. `preventDefault()` now covers every single printable character plus `Enter`/`Delete`, so the shadow textarea's `change` event is reserved for genuine IME composition commits only.

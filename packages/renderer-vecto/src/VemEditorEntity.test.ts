@@ -117,6 +117,39 @@ describe('VemEditorEntity autocomplete API', () => {
     expect(editorState.getCommandText()).toBe('vsp');
   });
 
+  it('prevents default for every printable key so the a11y shadow textarea never sees it too', () => {
+    // Regression test: previously only a whitelist of navigation/control keys
+    // called preventDefault(), so plain letters also reached the focused a11y
+    // <textarea> natively. That mutated its value and fired the 'change'
+    // handler a second time for the same keystroke — 'i' both switched to
+    // INSERT *and* inserted the literal 'i', and repeated 'a' compounded.
+    const press = (key: string) => {
+      let prevented = false;
+      entity.emit('keydown', {
+        nativeEvent: {
+          key,
+          ctrlKey: false,
+          preventDefault: () => {
+            prevented = true;
+          },
+        },
+      });
+      return prevented;
+    };
+
+    expect(press('i')).toBe(true);
+    expect(editorState.getMode()).toBe('INSERT');
+    expect(editorState.getBuffer().getLine(0)).toBe('const x = 1;');
+
+    expect(press('a')).toBe(true);
+    expect(press('a')).toBe(true);
+    expect(press('a')).toBe(true);
+    expect(editorState.getBuffer().getLine(0)).toBe('aaaconst x = 1;');
+
+    expect(press('Enter')).toBe(true);
+    expect(press('Delete')).toBe(true);
+  });
+
   it('should position the cursor from VectoJS local pointer coordinates', () => {
     // Turn on absolute line numbers so the gutter has its digit width (the
     // nonumber default has a zero-width gutter and different click math).
