@@ -63,6 +63,33 @@ describe('VemWorkspace', () => {
     expect(workspace.getActiveLayout()?.getActiveState()?.getText()).toBe('');
   });
 
+  it('hides the tab bar for a lone buffer and shows it from the second one (showtabline=1)', () => {
+    const workspace = new VemWorkspace(800, 600, '');
+    stubScene(workspace);
+    const tabs = (
+      workspace as unknown as {
+        tabsComponent: { effectiveTabBarHeight: number; update(dt: number, t: number): void };
+      }
+    ).tabsComponent;
+
+    // Fresh start = vim with no arguments: no tab bar, full-height buffer.
+    workspace.update(16, 0);
+    expect(tabs.effectiveTabBarHeight).toBe(0);
+    expect(workspace.getActiveLayout()?.height).toBe(600);
+
+    // A second buffer brings the bar back and shrinks the layouts under it.
+    workspace.openBuffer('two', 'two.ts');
+    workspace.update(16, 0);
+    expect(tabs.effectiveTabBarHeight).toBe(30);
+    expect(workspace.getActiveLayout()?.height).toBe(570);
+
+    // Closing back down to one hides it again (last-tab reset included).
+    workspace.closeActiveTab();
+    workspace.update(16, 0);
+    expect(tabs.effectiveTabBarHeight).toBe(0);
+    expect(workspace.getActiveLayout()?.height).toBe(600);
+  });
+
   it('resizes every layout on update so panes track the hosting panel width', () => {
     const workspace = new VemWorkspace(800, 600, 'one');
     stubScene(workspace);
