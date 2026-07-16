@@ -117,6 +117,39 @@ describe('VemEditorEntity autocomplete API', () => {
     expect(editorState.getCommandText()).toBe('vsp');
   });
 
+  it('prevents default for every printable key so the a11y shadow textarea never sees it too', () => {
+    // Regression test: previously only a whitelist of navigation/control keys
+    // called preventDefault(), so plain letters also reached the focused a11y
+    // <textarea> natively. That mutated its value and fired the 'change'
+    // handler a second time for the same keystroke — 'i' both switched to
+    // INSERT *and* inserted the literal 'i', and repeated 'a' compounded.
+    const press = (key: string) => {
+      let prevented = false;
+      entity.emit('keydown', {
+        nativeEvent: {
+          key,
+          ctrlKey: false,
+          preventDefault: () => {
+            prevented = true;
+          },
+        },
+      });
+      return prevented;
+    };
+
+    expect(press('i')).toBe(true);
+    expect(editorState.getMode()).toBe('INSERT');
+    expect(editorState.getBuffer().getLine(0)).toBe('const x = 1;');
+
+    expect(press('a')).toBe(true);
+    expect(press('a')).toBe(true);
+    expect(press('a')).toBe(true);
+    expect(editorState.getBuffer().getLine(0)).toBe('aaaconst x = 1;');
+
+    expect(press('Enter')).toBe(true);
+    expect(press('Delete')).toBe(true);
+  });
+
   it('should position the cursor from VectoJS local pointer coordinates', () => {
     // Turn on absolute line numbers so the gutter has its digit width (the
     // nonumber default has a zero-width gutter and different click math).
@@ -129,8 +162,11 @@ describe('VemEditorEntity autocomplete API', () => {
       },
     });
 
+    // Center of char cell 4: gutter (2 digits × 8.4 + 15 = 31.8) + padding 5
+    // + 4.5 × charWidth. The old value (70) sat inside cell 3 and only mapped
+    // to 4 through the pre-fix Math.round; Vim floor semantics keep it on 3.
     entity.emit('pointerdown', {
-      localX: 70,
+      localX: 74.6,
       localY: 12,
       nativeEvent: {
         offsetX: 999,
@@ -602,5 +638,34 @@ describe('VemEditorEntity IME composition (Fcitx5, Pinyin, etc.)', () => {
     // NORMAL mode by default.
     entity.emit('change', { value: '你好', composition: null });
     expect(state.getText()).toBe('');
+  });
+});
+
+describe('VemEditorEntity click-to-cell mapping', () => {
+  const makeEntity = () => {
+    const state = new VemEditorState('alpha\nbravo');
+    const entity = new VemEditorEntity(state);
+    Object.defineProperty(entity, 'scene', {
+      configurable: true,
+      value: {
+        getA11yElement: () => ({ focus() {} }),
+        markDirty() {},
+      },
+    });
+    return { state, entity };
+  };
+
+  it('a click lands on the cell CONTAINING the pointer, Vim-style (floor, not round)', () => {
+    const { state, entity } = makeEntity();
+    // Right half of char 3 ('h' in "alpha"): rounding would send the cursor
+    // to char 4; Vim mouse=a puts it on the clicked cell.
+    entity.emit('pointerdown', { localX: 5 + 3.75 * 8.4, localY: 12 });
+    expect(state.getCursor()).toEqual({ line: 0, character: 3 });
+  });
+
+  it('a click in the left padding clamps to character 0', () => {
+    const { state, entity } = makeEntity();
+    entity.emit('pointerdown', { localX: 2, localY: 12 });
+    expect(state.getCursor()).toEqual({ line: 0, character: 0 });
   });
 });

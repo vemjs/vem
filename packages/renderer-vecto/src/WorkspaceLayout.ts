@@ -262,9 +262,19 @@ export class WorkspaceLayout extends UIComponent {
 
   public update(dt: number, time: number): void {
     super.update(dt, time);
-    if (this.layoutRoot) {
-      this.layoutRoot.width = this.width;
-      this.layoutRoot.height = this.height;
+    if (
+      this.layoutRoot &&
+      (this.layoutRoot.width !== this.width || this.layoutRoot.height !== this.height)
+    ) {
+      if (this.layoutRoot instanceof PanelGroup) {
+        // resize() redistributes the panel sizes; a bare width/height write
+        // does not, leaving split panes at stale sizes that overflow the box
+        // when the Explorer/PluginLab opens or the window resizes.
+        this.layoutRoot.resize(this.width, this.height);
+      } else {
+        this.layoutRoot.width = this.width;
+        this.layoutRoot.height = this.height;
+      }
     }
   }
 

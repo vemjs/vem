@@ -41,3 +41,31 @@ describe('WorkspaceLayout active-pane cursor ownership', () => {
     expect(inner.paneEntityMap.get(secondPaneId)!.editorEntity.isActivePane).toBe(false);
   });
 });
+
+describe('WorkspaceLayout re-layout on box changes', () => {
+  it('redistributes split panes when the layout box shrinks (sidebar toggle / window resize)', () => {
+    const layout = new WorkspaceLayout(800, 600, 'one');
+    // `:vsp` — side-by-side panes (PaneNode 'vertical' divider).
+    layout.splitPane(layout.getActivePaneId(), 'vertical', 'two');
+    layout.update(16, 16);
+
+    // The Explorer opening (or a window resize) shrinks the layout box. The
+    // root PanelGroup must redistribute — a bare width/height write leaves
+    // both panes at their stale sizes, overflowing the box off-screen.
+    layout.width = 500;
+    layout.height = 400;
+    layout.update(16, 32);
+
+    const panes = [
+      ...(
+        layout as unknown as {
+          paneEntityMap: Map<string, { width: number; height: number }>;
+        }
+      ).paneEntityMap.values(),
+    ];
+    expect(panes.length).toBe(2);
+    const totalWidth = panes.reduce((sum, p) => sum + p.width, 0);
+    expect(totalWidth).toBeLessThanOrEqual(500);
+    for (const pane of panes) expect(pane.height).toBe(400);
+  });
+});
