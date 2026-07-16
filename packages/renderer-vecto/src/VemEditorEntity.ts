@@ -254,8 +254,10 @@ export class VemEditorEntity extends UIComponent {
       const relativeY = localY - contentOffsetY + this.scrollY * this.lineHeight - 5;
       const line = Math.floor(relativeY / this.lineHeight);
 
+      // Vim mouse=a puts the cursor on the cell CONTAINING the pointer —
+      // floor, not round (rounding sent right-half clicks one cell right).
       const relativeX = localX - gutterWidth - 5 + this.scrollX * this.charWidth;
-      const character = Math.round(relativeX / this.charWidth);
+      const character = Math.max(0, Math.floor(relativeX / this.charWidth));
       return { line, character };
     };
 

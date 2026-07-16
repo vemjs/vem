@@ -162,8 +162,11 @@ describe('VemEditorEntity autocomplete API', () => {
       },
     });
 
+    // Center of char cell 4: gutter (2 digits × 8.4 + 15 = 31.8) + padding 5
+    // + 4.5 × charWidth. The old value (70) sat inside cell 3 and only mapped
+    // to 4 through the pre-fix Math.round; Vim floor semantics keep it on 3.
     entity.emit('pointerdown', {
-      localX: 70,
+      localX: 74.6,
       localY: 12,
       nativeEvent: {
         offsetX: 999,
@@ -635,5 +638,34 @@ describe('VemEditorEntity IME composition (Fcitx5, Pinyin, etc.)', () => {
     // NORMAL mode by default.
     entity.emit('change', { value: '你好', composition: null });
     expect(state.getText()).toBe('');
+  });
+});
+
+describe('VemEditorEntity click-to-cell mapping', () => {
+  const makeEntity = () => {
+    const state = new VemEditorState('alpha\nbravo');
+    const entity = new VemEditorEntity(state);
+    Object.defineProperty(entity, 'scene', {
+      configurable: true,
+      value: {
+        getA11yElement: () => ({ focus() {} }),
+        markDirty() {},
+      },
+    });
+    return { state, entity };
+  };
+
+  it('a click lands on the cell CONTAINING the pointer, Vim-style (floor, not round)', () => {
+    const { state, entity } = makeEntity();
+    // Right half of char 3 ('h' in "alpha"): rounding would send the cursor
+    // to char 4; Vim mouse=a puts it on the clicked cell.
+    entity.emit('pointerdown', { localX: 5 + 3.75 * 8.4, localY: 12 });
+    expect(state.getCursor()).toEqual({ line: 0, character: 3 });
+  });
+
+  it('a click in the left padding clamps to character 0', () => {
+    const { state, entity } = makeEntity();
+    entity.emit('pointerdown', { localX: 2, localY: 12 });
+    expect(state.getCursor()).toEqual({ line: 0, character: 0 });
   });
 });
