@@ -1,5 +1,13 @@
 # @vemjs/renderer-vecto
 
+## 0.4.4
+
+### Patch Changes
+
+- 9ea701f: Implement first batch of Vim-native motions and commands: zz/zt/zb, H/M/L, J, ~, {/}, gf, gv, gi, [[/]]/[]/][, <C-a>/<C-x>, m{a-zA-Z}/'{a-zA-Z}, ZZ/ZQ.
+- Updated dependencies [9ea701f]
+  - @vemjs/core@0.4.0
+
 ## 0.4.3
 
 ### Patch Changes

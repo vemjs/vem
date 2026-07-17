@@ -1,5 +1,11 @@
 # @vemjs/core
 
+## 0.4.0
+
+### Minor Changes
+
+- 9ea701f: Implement first batch of Vim-native motions and commands: zz/zt/zb, H/M/L, J, ~, {/}, gf, gv, gi, [[/]]/[]/][, <C-a>/<C-x>, m{a-zA-Z}/'{a-zA-Z}, ZZ/ZQ.
+
 ## 0.3.1
 
 ### Patch Changes
