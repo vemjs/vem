@@ -1,5 +1,12 @@
 # @vemjs/plugin-api
 
+## 0.1.10
+
+### Patch Changes
+
+- Updated dependencies
+  - @vemjs/core@0.6.0
+
 ## 0.1.9
 
 ### Patch Changes

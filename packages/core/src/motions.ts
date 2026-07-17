@@ -218,6 +218,54 @@ export function getTextObjectRange(
   textObj: string,
 ): { start: Position; end: Position } | null {
   const line = buffer.getLine(pos.line);
+  if (textObj.startsWith('i') || textObj.startsWith('a')) {
+    const isAround = textObj.startsWith('a');
+    const inner = textObj[1];
+
+    // WORD text objects
+    if (inner === 'W') {
+      return getTextObjectWordRange(buffer, pos, true);
+    }
+
+    // Paragraph text objects (blank-line separated blocks)
+    if (inner === 'p') {
+      return getTextObjectParagraphRange(buffer, pos, isAround);
+    }
+
+    // Sentence text objects
+    if (inner === 's') {
+      return getTextObjectSentenceRange(buffer, pos, isAround);
+    }
+
+    // Tag block (e.g. <div>...</div>)
+    if (inner === 't') {
+      return getTextObjectTagRange(buffer, pos, isAround);
+    }
+
+    // Matching bracket/quote pairs
+    const pairs: Record<string, [string, string]> = {
+      '(': ['(', ')'],
+      ')': ['(', ')'],
+      '[': ['[', ']'],
+      ']': ['[', ']'],
+      '{': ['{', '}'],
+      '}': ['{', '}'],
+      '<': ['<', '>'],
+      '>': ['<', '>'],
+    };
+    const quoteChars = new Set(['"', "'", '`']);
+
+    if (pairs[inner]) {
+      return getTextObjectBracketRange(buffer, pos, pairs[inner][0], pairs[inner][1], isAround);
+    }
+    if (quoteChars.has(inner)) {
+      return getTextObjectQuoteRange(buffer, pos, inner, isAround);
+    }
+
+    // Fall through to standard word-based iw/aw
+  }
+
+  // Fallback: standard word-based iw/aw (original logic)
   if (line.length === 0) {
     return { start: { ...pos }, end: { ...pos } };
   }
@@ -225,29 +273,21 @@ export function getTextObjectRange(
   const char = line[pos.character] || '';
   const initialClass = getCharClass(char);
 
-  // Find start of current block
   let startCharIdx = pos.character;
   while (startCharIdx > 0) {
-    if (getCharClass(line[startCharIdx - 1]) !== initialClass) {
-      break;
-    }
+    if (getCharClass(line[startCharIdx - 1]) !== initialClass) break;
     startCharIdx--;
   }
-
-  // Find end of current block
   let endCharIdx = pos.character;
   while (endCharIdx < line.length - 1) {
-    if (getCharClass(line[endCharIdx + 1]) !== initialClass) {
-      break;
-    }
+    if (getCharClass(line[endCharIdx + 1]) !== initialClass) break;
     endCharIdx++;
   }
 
   const start: Position = { line: pos.line, character: startCharIdx };
   const end: Position = { line: pos.line, character: endCharIdx };
 
-  if (textObj === 'aw') {
-    // Extend to include trailing whitespace (on the same line)
+  if (textObj === 'aw' || textObj === 'aW') {
     let nextIdx = end.character + 1;
     let extendedTrailing = false;
     while (nextIdx < line.length && /\s/.test(line[nextIdx])) {
@@ -257,7 +297,6 @@ export function getTextObjectRange(
     if (extendedTrailing) {
       end.character = nextIdx - 1;
     } else {
-      // If no trailing whitespace, extend to include leading whitespace
       let prevIdx = start.character - 1;
       let extendedLeading = false;
       while (prevIdx >= 0 && /\s/.test(line[prevIdx])) {
@@ -271,6 +310,267 @@ export function getTextObjectRange(
   }
 
   return { start, end };
+}
+
+/** WORD text object (W): word boundaries = whitespace only. */
+function getTextObjectWordRange(
+  buffer: VimBuffer,
+  pos: Position,
+  isAround: boolean,
+): { start: Position; end: Position } | null {
+  const line = buffer.getLine(pos.line);
+  if (line.length === 0) return { start: { ...pos }, end: { ...pos } };
+  const isWord = (c: string) => !/\s/.test(c);
+  let startIdx = pos.character;
+  while (startIdx > 0 && isWord(line[startIdx - 1])) startIdx--;
+  let endIdx = pos.character;
+  while (endIdx < line.length - 1 && isWord(line[endIdx + 1])) endIdx++;
+  if (startIdx === pos.character || endIdx === pos.character) {
+    // On whitespace: find next/prev word boundaries
+    while (startIdx > 0 && !isWord(line[startIdx - 1])) startIdx--;
+    while (endIdx < line.length - 1 && !isWord(line[endIdx + 1])) endIdx++;
+  }
+  const start: Position = { line: pos.line, character: startIdx };
+  const end: Position = { line: pos.line, character: endIdx };
+  if (isAround) {
+    // Extend to include trailing whitespace
+    let nextIdx = end.character + 1;
+    while (nextIdx < line.length && /\s/.test(line[nextIdx])) nextIdx++;
+    if (nextIdx > end.character + 1) {
+      end.character = nextIdx - 1;
+    } else {
+      let prevIdx = start.character - 1;
+      while (prevIdx >= 0 && /\s/.test(line[prevIdx])) prevIdx--;
+      if (prevIdx < start.character - 1) start.character = prevIdx + 1;
+    }
+  }
+  return { start, end };
+}
+
+/** Paragraph text object: blank-line-separated block. */
+function getTextObjectParagraphRange(
+  buffer: VimBuffer,
+  pos: Position,
+  _isAround: boolean,
+): { start: Position; end: Position } | null {
+  let startLine = pos.line;
+  let endLine = pos.line;
+  const total = buffer.getLineCount();
+  // Expand upward
+  while (startLine > 0 && buffer.getLine(startLine - 1).trim() !== '') startLine--;
+  if (startLine > 0 && buffer.getLine(startLine - 1).trim() === '') startLine--;
+  // Expand downward
+  while (endLine < total - 1 && buffer.getLine(endLine + 1).trim() !== '') endLine++;
+  if (endLine < total - 1 && buffer.getLine(endLine + 1).trim() === '') endLine++;
+  const start: Position = { line: startLine, character: 0 };
+  const lastLineLen = buffer.getLine(endLine).length;
+  const end: Position = { line: endLine, character: Math.max(0, lastLineLen - 1) };
+  return { start, end };
+}
+
+/** Sentence text object (simple: ends at .!? followed by space or EOL). */
+function getTextObjectSentenceRange(
+  buffer: VimBuffer,
+  pos: Position,
+  _isAround: boolean,
+): { start: Position; end: Position } | null {
+  let startLine = pos.line;
+  let startChar = pos.character;
+  let endLine = pos.line;
+  let endChar = pos.character;
+  const total = buffer.getLineCount();
+  // Expand backward to start of sentence
+  while (startLine > 0 || startChar > 0) {
+    if (startChar <= 0) {
+      startLine--;
+      startChar = buffer.getLine(startLine).length;
+    }
+    startChar--;
+    const c = buffer.getLine(startLine)[startChar];
+    if (/[.!?]/.test(c) && startChar < buffer.getLine(startLine).length - 1) {
+      startChar += 2; // Skip past the punctuation + space
+      break;
+    }
+  }
+  // Expand forward to end of sentence
+  while (endLine < total) {
+    const line = buffer.getLine(endLine);
+    if (endChar >= line.length) {
+      endLine++;
+      endChar = 0;
+      if (endLine >= total) break;
+    }
+    const c = buffer.getLine(endLine)[endChar];
+    if (/[.!?]/.test(c)) {
+      endChar++; // Include the punctuation
+      break;
+    }
+    endChar++;
+  }
+  return {
+    start: { line: Math.max(0, startLine), character: Math.max(0, startChar) },
+    end: { line: Math.min(total - 1, endLine), character: endChar },
+  };
+}
+
+/** Tag block text object: find matching XML/HTML tags. */
+function getTextObjectTagRange(
+  buffer: VimBuffer,
+  pos: Position,
+  isAround: boolean,
+): { start: Position; end: Position } | null {
+  // Simple implementation: find matching <tag>...</tag> on the same indentation level
+  const line = buffer.getLine(pos.line);
+  const tagMatch = line.match(/<(\w+)[^>]*>/);
+  if (!tagMatch) return null;
+  const tagName = tagMatch[1];
+  const startIdx = tagMatch.index!;
+  const closeTag = `</${tagName}>`;
+  for (let l = pos.line; l < buffer.getLineCount(); l++) {
+    const lText = buffer.getLine(l);
+    const closeIdx = lText.indexOf(closeTag);
+    if (closeIdx !== -1) {
+      const endIdx = closeIdx + closeTag.length - 1;
+      if (isAround) {
+        return {
+          start: { line: pos.line, character: startIdx },
+          end: { line: l, character: endIdx },
+        };
+      }
+      return {
+        start: { line: pos.line, character: startIdx + tagMatch[0].length },
+        end: { line: l, character: closeIdx - 1 },
+      };
+    }
+  }
+  return null;
+}
+
+/** Bracket pair text object: find matching brackets, handling nesting. */
+function getTextObjectBracketRange(
+  buffer: VimBuffer,
+  pos: Position,
+  openChar: string,
+  closeChar: string,
+  isAround: boolean,
+): { start: Position; end: Position } | null {
+  const line = buffer.getLine(pos.line);
+  // Find the bracket at or nearest to cursor
+  let bracketIdx = -1;
+  for (let i = pos.character; i >= 0; i--) {
+    if (line[i] === openChar || line[i] === closeChar) {
+      bracketIdx = i;
+      break;
+    }
+  }
+  if (bracketIdx === -1) {
+    for (let i = pos.character; i < line.length; i++) {
+      if (line[i] === openChar || line[i] === closeChar) {
+        bracketIdx = i;
+        break;
+      }
+    }
+  }
+  if (bracketIdx === -1) return null;
+
+  const isOpen = line[bracketIdx] === openChar;
+  let depth = 0;
+  let startPos: Position = { line: pos.line, character: 0 };
+  let endPos: Position = { line: pos.line, character: 0 };
+  let found = false;
+
+  if (isOpen) {
+    // Forward to close
+    depth = 1;
+    startPos = { line: pos.line, character: bracketIdx };
+    for (let l = pos.line; l < buffer.getLineCount(); l++) {
+      const lText = buffer.getLine(l);
+      const startC = l === pos.line ? bracketIdx + 1 : 0;
+      for (let c = startC; c < lText.length; c++) {
+        if (lText[c] === openChar) depth++;
+        else if (lText[c] === closeChar) {
+          depth--;
+          if (depth === 0) {
+            endPos = { line: l, character: c };
+            found = true;
+            break;
+          }
+        }
+      }
+      if (found) break;
+    }
+  } else {
+    // Backward to open
+    depth = 1;
+    endPos = { line: pos.line, character: bracketIdx };
+    for (let l = pos.line; l >= 0; l--) {
+      const lText = buffer.getLine(l);
+      const startC = l === pos.line ? bracketIdx - 1 : lText.length - 1;
+      for (let c = startC; c >= 0; c--) {
+        if (lText[c] === closeChar) depth++;
+        else if (lText[c] === openChar) {
+          depth--;
+          if (depth === 0) {
+            startPos = { line: l, character: c };
+            found = true;
+            break;
+          }
+        }
+      }
+      if (found) break;
+    }
+  }
+
+  if (!found) return null;
+
+  if (isAround) {
+    return { start: startPos, end: endPos };
+  }
+  // Inner: exclude the brackets themselves
+  return {
+    start: { line: startPos.line, character: startPos.character + 1 },
+    end: { line: endPos.line, character: endPos.character - 1 },
+  };
+}
+
+/** Quote text object: find matching quotes on the same line. */
+function getTextObjectQuoteRange(
+  buffer: VimBuffer,
+  pos: Position,
+  quote: string,
+  isAround: boolean,
+): { start: Position; end: Position } | null {
+  const line = buffer.getLine(pos.line);
+  // Find the closest quote at or after cursor
+  let leftIdx = -1;
+  let rightIdx = -1;
+  for (let i = pos.character - 1; i >= 0; i--) {
+    if (line[i] === quote) {
+      leftIdx = i;
+      break;
+    }
+  }
+  for (let i = pos.character; i < line.length; i++) {
+    if (line[i] === quote) {
+      if (leftIdx !== -1 && rightIdx === -1) {
+        rightIdx = i;
+        break;
+      }
+      leftIdx = i;
+    }
+  }
+  if (leftIdx === -1 || rightIdx === -1 || leftIdx === rightIdx) return null;
+
+  if (isAround) {
+    return {
+      start: { line: pos.line, character: leftIdx },
+      end: { line: pos.line, character: rightIdx },
+    };
+  }
+  return {
+    start: { line: pos.line, character: leftIdx + 1 },
+    end: { line: pos.line, character: rightIdx - 1 },
+  };
 }
 
 /**

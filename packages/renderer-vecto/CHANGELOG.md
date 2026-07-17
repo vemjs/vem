@@ -1,5 +1,12 @@
 # @vemjs/renderer-vecto
 
+## 0.4.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @vemjs/core@0.6.0
+
 ## 0.4.5
 
 ### Patch Changes
