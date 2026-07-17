@@ -310,6 +310,82 @@ describe('VemEditorEntity grid rendering', () => {
     entity.render(r);
     expect(texts.some((t) => t.text === '0,0-1')).toBe(true);
   });
+
+  /**
+   * Real Canvas2D `clip()` is affected by the CURRENT transform matrix set
+   * up by prior `translate()` calls — it does not take absolute device-space
+   * coordinates like the no-op mock recorder above assumes. `render()` calls
+   * `r.translate(0, -scrollY*lineHeight + contentOffsetY)` for the scroll
+   * transform and THEN `r.clip(gutterWidth, 0, width-gutterWidth, height)`
+   * using screen-space numbers — under a real canvas, that clip rect gets
+   * carried along by the active translation, so at a big enough scroll
+   * offset the clip region drifts entirely off-screen and every glyph drawn
+   * after it (all buffer text) is silently clipped away, even though the
+   * fillText() calls and their coordinates are perfectly correct. This
+   * recorder tracks the translate stack for real, so it catches that class
+   * of bug that the no-op mock above cannot.
+   */
+  const makeTransformAwareRecorder = () => {
+    const texts: { text: string; screenY: number }[] = [];
+    let translateStack: number[] = [0];
+    let currentTranslateY = 0;
+    let clipTop = -Infinity;
+    let clipBottom = Infinity;
+    const noop = () => {};
+    const r: any = {
+      beginPath: noop,
+      moveTo: noop,
+      lineTo: noop,
+      closePath: noop,
+      fill: noop,
+      stroke: noop,
+      roundRect: noop,
+      save: () => {
+        translateStack.push(currentTranslateY);
+      },
+      restore: () => {
+        currentTranslateY = translateStack.pop() ?? 0;
+      },
+      translate: (_x: number, y: number) => {
+        currentTranslateY += y;
+      },
+      // Real Canvas2D: the clip rect is specified in the CURRENT (already
+      // translated) coordinate space, so its effective screen position is
+      // offset by whatever translate() is active right now.
+      clip: (_x: number, y: number, _w: number, h: number) => {
+        clipTop = y + currentTranslateY;
+        clipBottom = y + h + currentTranslateY;
+      },
+      fillText: (text: string, _x: number, y: number) => {
+        const screenY = y + currentTranslateY;
+        // Only record glyphs that would actually survive the active clip —
+        // mirroring what a real canvas would paint to the screen.
+        if (screenY >= clipTop && screenY <= clipBottom) {
+          texts.push({ text, screenY });
+        }
+      },
+      measureText: (t: string) => ({ width: t.length * 8 }),
+    };
+    return { r, texts };
+  };
+
+  it('renders visible buffer text after scrolling well past one screenful (regression: clip drifted off-screen with the scroll translate)', () => {
+    // 64 lines, pane only tall enough for ~20 — matches the vem.run :help
+    // buffer/pane geometry that reproduced this bug live.
+    const lines = Array.from({ length: 64 }, (_, i) => `line ${i}`);
+    const state = new VemEditorState(lines.join('\n'));
+    const entity = new VemEditorEntity(state) as any;
+    entity.width = 1280;
+    entity.height = 430;
+    entity.scrollY = 24; // well past one screenful (height/lineHeight ≈ 20 rows)
+
+    const { r, texts } = makeTransformAwareRecorder();
+    entity.render(r);
+
+    const visibleLineTexts = texts.filter((t) => /^line \d+$/.test(t.text));
+    expect(visibleLineTexts.length).toBeGreaterThan(0);
+    expect(visibleLineTexts.some((t) => t.text === 'line 24')).toBe(true);
+  });
 });
 
 describe('VemEditorEntity mouse selection (Vim mouse=a)', () => {

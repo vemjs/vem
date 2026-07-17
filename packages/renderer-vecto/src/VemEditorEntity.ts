@@ -599,8 +599,28 @@ export class VemEditorEntity extends UIComponent {
     // of the gutter — a horizontally-scrolled long line's leading characters
     // (now at a negative on-screen X, see scrollX above) would otherwise
     // paint over the gutter/line-numbers instead of scrolling behind them.
+    //
+    // clip()'s rect is interpreted in the CURRENT (already-translated)
+    // coordinate space, not screen space — we're inside the r.translate()
+    // above. Passing the screen-space rect (gutterWidth, 0, ..., height)
+    // directly clipped correctly only while the scroll offset was small; once
+    // scrollY*lineHeight exceeded roughly one screenful, the whole clip
+    // region drifted off past the top of the viewport and every glyph drawn
+    // after it (i.e. all buffer text) was silently clipped away — text was
+    // computed and "drawn" at the right coordinates, it just never reached
+    // the screen. Reproduced live on vem.run: open `:help` (64 lines in a
+    // ~20-row pane) and scroll a couple of wheel notches past the first
+    // screenful — the pane goes solid black. Offsetting the clip's Y by the
+    // same amount the translate() above applies (in reverse) keeps its
+    // effective on-screen position pinned to (gutterWidth, 0)..(width,
+    // height) regardless of scroll position.
     r.save();
-    r.clip(gutterWidth, 0, this.width - gutterWidth, this.height);
+    r.clip(
+      gutterWidth,
+      this.scrollY * this.lineHeight - contentOffsetY,
+      this.width - gutterWidth,
+      this.height,
+    );
 
     // 2.7. Draw buffer text directly on the character grid: every glyph run
     // advances by charWidth so caret, click, and selection math always match.
