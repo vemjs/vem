@@ -218,8 +218,12 @@ export class VemEditorState {
   private scrollToLineCallbacks: ((line: number) => void)[] = [];
   private openFileUnderCursorCallbacks: ((path: string) => void)[] = [];
   private windowActionCallbacks: ((action: string) => void)[] = [];
+  private optionsChangedCallbacks: ((key: string, value: string) => void)[] = [];
   /** The cursor position BEFORE the last change (for g;/g,). */
   private changeList: Position[] = [];
+  /** Jump list (Ctrl-o/Ctrl-i): oldest entries at index 0. */
+  private jumpList: Position[] = [];
+  private jumpListIndex: number = -1;
   /** Number of visible lines in the viewport, set by the renderer (for H/M/L). */
   public visibleLines: number = 0;
   /** Current scroll line offset, set by the renderer (for H/M/L). */
@@ -343,6 +347,14 @@ export class VemEditorState {
 
   public onOpenFileUnderCursor(callback: (path: string) => void): void {
     this.openFileUnderCursorCallbacks.push(callback);
+  }
+
+  public onOptionsChanged(callback: (key: string, value: string) => void): void {
+    this.optionsChangedCallbacks.push(callback);
+  }
+
+  private triggerOptionsChanged(key: string, value: string): void {
+    for (const cb of this.optionsChangedCallbacks) cb(key, value);
   }
 
   private triggerScrollToLine(line: number): void {
@@ -1451,6 +1463,14 @@ export class VemEditorState {
           this.addNumber(-cmd.count);
           break;
 
+        // --- <C-o>/<C-i>: jump list navigation ---
+        case '<C-o>':
+          this.goBackInJumplist();
+          break;
+        case '<C-i>':
+          this.goForwardInJumplist();
+          break;
+
         // --- m{a-zA-Z}: set mark ---
         case 'm':
           if (cmd.mark) {
@@ -1854,6 +1874,35 @@ export class VemEditorState {
     }
   }
 
+  /** Record a cursor position in the jump list. Called by moveCursorByMotion. */
+  public pushJumpList(): void {
+    this.jumpList.push({ ...this.cursor });
+    if (this.jumpList.length > 100) this.jumpList.shift();
+    this.jumpListIndex = this.jumpList.length - 1;
+  }
+
+  /** `<C-o>`: go to the previous (older) position in the jump list. */
+  private goBackInJumplist(): void {
+    if (this.jumpListIndex > 0 && this.jumpList.length > 1) {
+      this.jumpListIndex--;
+      const pos = this.jumpList[this.jumpListIndex];
+      this.cursor.line = pos.line;
+      this.cursor.character = pos.character;
+      this.desiredCol = pos.character;
+    }
+  }
+
+  /** `<C-i>`: go to the next (newer) position in the jump list. */
+  private goForwardInJumplist(): void {
+    if (this.jumpListIndex < this.jumpList.length - 1) {
+      this.jumpListIndex++;
+      const pos = this.jumpList[this.jumpListIndex];
+      this.cursor.line = pos.line;
+      this.cursor.character = pos.character;
+      this.desiredCol = pos.character;
+    }
+  }
+
   /** `gJ`: join lines without inserting a space. */
   private joinLinesNoSpace(count: number): void {
     const start = this.cursor.line;
@@ -1893,7 +1942,7 @@ export class VemEditorState {
     }
   }
 
-  private executeSetOption(option: string): void {
+  public executeSetOption(option: string): void {
     // Vim's real syntax for OS-clipboard integration: `:set clipboard=unnamed`
     // (or `unnamedplus`) routes y/d/c/x/p/P through the system clipboard
     // instead of just the internal `"` register; `:set clipboard=` reverts.
@@ -1935,14 +1984,18 @@ export class VemEditorState {
 
     if (option === 'relativenumber' || option === 'rnu') {
       this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'relative' };
+      this.triggerOptionsChanged('relativenumber', 'relative');
     } else if (option === 'norelativenumber' || option === 'nornu') {
       // Falls back to absolute if numbers are on, else stays off.
       const next = this.layoutConfig.lineNumbers === 'relative' ? 'absolute' : 'none';
       this.layoutConfig = { ...this.layoutConfig, lineNumbers: next };
+      this.triggerOptionsChanged('number', next);
     } else if (option === 'number' || option === 'nu') {
       this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'absolute' };
+      this.triggerOptionsChanged('number', 'absolute');
     } else if (option === 'nonumber' || option === 'nonu') {
       this.layoutConfig = { ...this.layoutConfig, lineNumbers: 'none' };
+      this.triggerOptionsChanged('number', 'none');
     } else {
       this.statusMessage = `E518: Unknown option: ${option}`;
     }
@@ -1976,6 +2029,7 @@ export class VemEditorState {
    * aborts rather than leaving the cursor somewhere half-moved.
    */
   private moveCursorByMotion(motion: string, count: number, findChar?: string): boolean {
+    this.pushJumpList();
     if (motion === 'f' || motion === 'F' || motion === 't' || motion === 'T') {
       return this.moveByFindChar(motion, count, findChar);
     }

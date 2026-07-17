@@ -94,6 +94,8 @@ const normalCommands = [
   '<C-y>',
   '<C-a>',
   '<C-x>',
+  '<C-o>',
+  '<C-i>',
   'Escape',
 ];
 
@@ -105,6 +107,10 @@ const gPrefixCommands: Record<string, string> = {
   i: 'gi', // go to last insert position
   ';': 'g;', // go to previous change
   ',': 'g,', // go to next change
+  u: 'gu', // make lowercase
+  U: 'gU', // make uppercase
+  q: 'gq', // format text
+  J: 'gJ', // join without space
 };
 
 const zPrefixCommands: Record<string, string> = {
