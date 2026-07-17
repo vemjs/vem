@@ -8,6 +8,8 @@ export interface ParsedCommand {
   command?: string;
   /** The target character for f/F/t/T motions or the r{char} command. */
   findChar?: string;
+  /** Set mark letter ({a-zA-Z}). */
+  mark?: string;
   isComplete: boolean;
   isValid: boolean;
 }
@@ -28,6 +30,81 @@ function matchCharMotion(str: string): { motion: string; findChar?: string } | n
   }
   return null;
 }
+
+// Two-key prefixes that wait for a second key (like 'g', 'z', 'Z', '[', ']')
+const prefixKeys = ['g', 'z', 'Z', '[', ']'];
+
+// Commands that standalone (single key or already-known pair)
+const normalCommands = [
+  'i',
+  'I',
+  'a',
+  'A',
+  'o',
+  'O',
+  'v',
+  'V',
+  '<C-v>',
+  'u',
+  '<C-r>',
+  'x',
+  'X',
+  'D',
+  'C',
+  'Y',
+  's',
+  'S',
+  'p',
+  'P',
+  ':',
+  '/',
+  'n',
+  'N',
+  '*',
+  '#',
+  'J',
+  '~',
+  'H',
+  'M',
+  'L',
+  '{',
+  '}',
+  '<C-d>',
+  '<C-u>',
+  '<C-f>',
+  '<C-b>',
+  '<C-e>',
+  '<C-y>',
+  '<C-a>',
+  '<C-x>',
+  'Escape',
+];
+
+// Keys that, in NORMAL mode, begin a motion prefix or command pair
+const gPrefixCommands: Record<string, string> = {
+  g: 'gg', // go to top
+  f: 'gf', // go to file under cursor
+  v: 'gv', // reselect visual selection
+  i: 'gi', // go to last insert position
+  ';': 'g;', // go to previous change
+  ',': 'g,', // go to next change
+};
+
+const zPrefixCommands: Record<string, string> = {
+  z: 'zz', // center cursor in window
+  t: 'zt', // scroll cursor to top of window
+  b: 'zb', // scroll cursor to bottom of window
+};
+
+const ZPrefixCommands: Record<string, string> = {
+  Z: 'ZZ', // write and quit
+  Q: 'ZQ', // quit without saving
+};
+
+const bracketPrefixCommands: Record<string, string> = {
+  '[': '[[', // section backward
+  ']': '[]', // section backward to end
+};
 
 export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCommand {
   const result: ParsedCommand = {
@@ -74,8 +151,8 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    // Motions in Visual mode
-    if (remStr === 'g') {
+    // Prefixes in Visual mode
+    if (prefixKeys.includes(remStr)) {
       result.isComplete = false;
       result.isValid = true;
       return result;
@@ -83,6 +160,15 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
     if (remStr === 'gg') {
       result.count = count1;
       result.motion = 'gg';
+      result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+    const gResolved = gPrefixCommands[remStr];
+    if (gResolved && gResolved.startsWith('g')) {
+      // gv, gi, etc. in Visual mode
+      result.count = count1;
+      result.command = gResolved;
       result.isComplete = true;
       result.isValid = true;
       return result;
@@ -103,6 +189,14 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       result.motion = visualCharMotion.motion;
       result.findChar = visualCharMotion.findChar;
       result.isComplete = !!visualCharMotion.findChar;
+      result.isValid = true;
+      return result;
+    }
+
+    if (normalCommands.includes(remStr)) {
+      result.count = count1;
+      result.command = remStr;
+      result.isComplete = true;
       result.isValid = true;
       return result;
     }
@@ -147,7 +241,7 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
 
     // Double operator check (dd, cc, yy)
     if (remOpStr === op) {
-      result.command = op + op; // e.g. "dd"
+      result.command = op + op;
       result.isComplete = true;
       result.isValid = true;
       return result;
@@ -166,12 +260,21 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    // Motions: h, j, k, l, w, b, e, 0, $, G, gg
-    if (remOpStr === 'g') {
+    // Prefixes after operator
+    if (prefixKeys.includes(remOpStr)) {
       result.isComplete = false;
       result.isValid = true;
       return result;
     }
+
+    // g-resolved motions after operator (only when preceded by g)
+    if (remOpStr.startsWith('g') && gPrefixCommands[remOpStr]) {
+      result.command = gPrefixCommands[remOpStr];
+      result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+
     if (remOpStr === 'gg') {
       result.motion = 'gg';
       result.isComplete = true;
@@ -205,16 +308,77 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
     const remainingNormal = keys.slice(idx);
     const remNormalStr = remainingNormal.join('');
 
-    if (remNormalStr === 'g') {
+    // Prefixes (g, z, Z, [, ]) — await second key
+    if (prefixKeys.includes(remNormalStr)) {
       result.isComplete = false;
       result.isValid = true;
       return result;
     }
+
+    // g-prefix resolved commands (only when preceded by g)
+    if (remNormalStr.startsWith('g') && gPrefixCommands[remNormalStr]) {
+      result.command = gPrefixCommands[remNormalStr];
+      result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+
+    // z-prefix resolved commands (only when preceded by z)
+    if (remNormalStr.startsWith('z') && zPrefixCommands[remNormalStr]) {
+      result.command = zPrefixCommands[remNormalStr];
+      result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+
+    // Z-prefix resolved commands (only when preceded by Z)
+    if (remNormalStr.startsWith('Z') && ZPrefixCommands[remNormalStr]) {
+      result.command = ZPrefixCommands[remNormalStr];
+      result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+
+    // bracket-prefix resolved commands (only when preceded by [ or ])
+    if (
+      (remNormalStr.startsWith('[') || remNormalStr.startsWith(']')) &&
+      bracketPrefixCommands[remNormalStr]
+    ) {
+      result.command = bracketPrefixCommands[remNormalStr];
+      result.isComplete = true;
+      result.isValid = true;
+      return result;
+    }
+
     if (remNormalStr === 'gg') {
       result.motion = 'gg';
       result.isComplete = true;
       result.isValid = true;
       return result;
+    }
+
+    // m{a-zA-Z}: set mark
+    if (remNormalStr.length === 2 && remNormalStr[0] === 'm') {
+      const markLetter = remNormalStr[1];
+      if (/^[a-zA-Z]$/.test(markLetter)) {
+        result.command = 'm';
+        result.mark = markLetter;
+        result.isComplete = true;
+        result.isValid = true;
+        return result;
+      }
+    }
+
+    // `{a-zA-Z}: jump to mark column-wise
+    if (remNormalStr.length === 2 && (remNormalStr[0] === '`' || remNormalStr[0] === "'")) {
+      const markLetter = remNormalStr[1];
+      if (/^[a-zA-Z]$/.test(markLetter)) {
+        result.command = remNormalStr[0] === '`' ? '`' : "'";
+        result.mark = markLetter;
+        result.isComplete = true;
+        result.isValid = true;
+        return result;
+      }
     }
 
     const singleKeyMotions = motionKeys;
@@ -248,43 +412,7 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    const commands = [
-      'i',
-      'I',
-      'a',
-      'A',
-      'o',
-      'O',
-      'v',
-      'V',
-      '<C-v>',
-      'u',
-      '<C-r>',
-      'x',
-      'X',
-      'D',
-      'C',
-      'Y',
-      's',
-      'S',
-      'p',
-      'P',
-      ':',
-      '/',
-      'n',
-      'N',
-      '*',
-      '#',
-      'Escape',
-      // Vim scroll motions (half/full page, single line)
-      '<C-d>',
-      '<C-u>',
-      '<C-f>',
-      '<C-b>',
-      '<C-e>',
-      '<C-y>',
-    ];
-    if (commands.includes(remNormalStr)) {
+    if (normalCommands.includes(remNormalStr)) {
       result.command = remNormalStr;
       result.isComplete = true;
       result.isValid = true;

@@ -366,6 +366,14 @@ export class VemEditorEntity extends UIComponent {
       this.scene?.markDirty();
     });
 
+    this.editorState.onScrollToLine((line: number) => {
+      this.scrollY = Math.max(
+        0,
+        Math.min(Math.max(0, this.editorState.getBuffer().getLineCount() - 1), line),
+      );
+      this.scene?.markDirty();
+    });
+
     this.updateFromState();
   }
 
@@ -476,6 +484,10 @@ export class VemEditorEntity extends UIComponent {
     } else {
       this.commandBar.setPosition(0, this.height - 30);
     }
+
+    // Sync viewport metrics to the state (for H/M/L, zz/zt/zb, etc.)
+    this.editorState.visibleLines = Math.floor((this.height - 35) / this.lineHeight);
+    this.editorState.viewportTop = this.scrollY;
   }
 
   public setAutocompleteItems(items: { label: string; detail?: string }[]): void {
