@@ -1511,9 +1511,101 @@ export class VemEditorState {
       this.triggerSplit('horizontal');
     } else if (base === 'set') {
       this.executeSetOption(arg);
+    } else if (base === 's') {
+      // :s/pattern/replacement/flags — line substitute
+      // :%s/pattern/replacement/flags — global substitute
+      let isGlobal = false;
+      let pattern = '';
+      let replacement = '';
+      let flags = '';
+
+      // Detect %s (global range)
+      let searchStart = 0;
+      if (trimmed.startsWith('%')) {
+        isGlobal = true;
+        searchStart = 1;
+      }
+
+      const body = trimmed.substring(searchStart);
+      if (body.startsWith('s') && body.length > 2 && body[1] === '/') {
+        const sep = '/';
+        const endIdx = body.indexOf(sep, 2);
+        if (endIdx !== -1) {
+          pattern = body.substring(2, endIdx);
+          const replEnd = body.indexOf(sep, endIdx + 1);
+          if (replEnd !== -1) {
+            replacement = body.substring(endIdx + 1, replEnd);
+            flags = body.substring(replEnd + 1);
+          } else {
+            replacement = body.substring(endIdx + 1);
+          }
+        }
+      }
+
+      if (pattern !== undefined) {
+        try {
+          const caseInsensitive = flags.includes('i');
+          const globalFlag = flags.includes('g');
+
+          // Build line range
+          let startLine = isGlobal ? 0 : this.cursor.line;
+          let endLine = isGlobal ? this.buffer.getLineCount() - 1 : this.cursor.line;
+
+          this.saveStateForUndo();
+
+          let totalMatches = 0;
+          for (let l = startLine; l <= endLine; l++) {
+            const line = this.buffer.getLine(l);
+            // Vim's `:s` without `g` uses a non-global regex (first match only)
+            const lineRe = new RegExp(pattern, caseInsensitive ? 'i' : '');
+            // Vim's `:s/.../.../g` uses a global regex (all matches)
+            const globalRe = new RegExp(pattern, caseInsensitive ? 'gi' : 'g');
+            const [newLine, count] = this.substituteLine(
+              line,
+              globalFlag ? globalRe : lineRe,
+              replacement,
+            );
+            if (count > 0) {
+              this.buffer.setLine(l, newLine);
+              totalMatches += count;
+            }
+          }
+
+          if (totalMatches > 0) {
+            this.modified = true;
+            this.statusMessage = `${totalMatches} substitution${totalMatches > 1 ? 's' : ''} on ${
+              isGlobal ? 'all lines' : 'this line'
+            }`;
+          } else if (pattern) {
+            this.statusMessage = `E486: Pattern not found: ${pattern}`;
+          }
+        } catch (e: any) {
+          this.statusMessage = `E475: Invalid argument: ${e.message}`;
+        }
+      }
     } else {
       this.statusMessage = `E492: Not an editor command: ${name}`;
     }
+  }
+
+  private substituteLine(line: string, regex: RegExp, replacement: string): [string, number] {
+    let count = 0;
+    const result = line.replace(regex, (...args: any[]) => {
+      count++;
+      const match = args[0] as string;
+      const groups: string[] = args.slice(1, -2);
+      const offset = args[args.length - 2] as number;
+      const input = args[args.length - 1] as string;
+      return replacement.replace(/\$(\d|[&`'])/g, (m, ref) => {
+        if (ref === '&') return match;
+        if (ref === '`') return input.substring(0, offset);
+        if (ref === "'") return input.substring(offset + match.length);
+        const n = parseInt(ref, 10);
+        if (!isNaN(n) && n < groups.length) return groups[n] ?? '';
+        return m;
+      });
+    });
+    return [result, count];
   }
 
   private executeSetOption(option: string): void {
