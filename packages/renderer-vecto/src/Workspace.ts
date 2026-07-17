@@ -76,6 +76,13 @@ export class VemWorkspace extends UIComponent {
    * so the caller can associate it with a file handle for save-back.
    */
   public openBuffer(text: string, label = 'untitled'): string {
+    if (label !== 'untitled') {
+      const existing = this.buffers.find((b) => b.label === label);
+      if (existing) {
+        this.syncTabs(existing.id);
+        return existing.id;
+      }
+    }
     const entry = this.makeBuffer(text, label);
     this.syncTabs(entry.id);
     return entry.id;
