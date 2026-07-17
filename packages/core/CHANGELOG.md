@@ -1,5 +1,14 @@
 # @vemjs/core
 
+## 0.6.0
+
+### Minor Changes
+
+- Add comprehensive Vim text objects support: `iW/aW` (WORD), `ip/ap` (paragraph),
+  `is/as` (sentence), `it/at` (tag block), `i(/a(`/`i)/a)` etc. (bracket pairs),
+  `i"/a"/i'/a'/i\`/a\`` (quote pairs). Expand parser text object detection to accept
+  all standard inner/around two-letter combinations.
+
 ## 0.5.0
 
 ### Minor Changes

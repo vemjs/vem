@@ -1,5 +1,12 @@
 # @vemjs/lsp-client
 
+## 0.1.9
+
+### Patch Changes
+
+- Updated dependencies
+  - @vemjs/core@0.6.0
+
 ## 0.1.8
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@vemjs/core",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Pure state machine for the Vem modal text editor",
   "type": "module",
   "main": "./dist/index.js",

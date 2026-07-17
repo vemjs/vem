@@ -264,13 +264,49 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    // Text objects: iw, aw
+    // Text objects: iw, aw, iW, aW, ip, ap, is, as, it, at,
+    //              i(, a(, i), a), i[, a[, i], a], i{, a{, i}, a}, i<, a<, i>, a>,
+    //              i", a", i', a', i`, a`
     if (remOpStr === 'i' || remOpStr === 'a') {
       result.isComplete = false;
       result.isValid = true;
       return result;
     }
-    if (remOpStr === 'iw' || remOpStr === 'aw') {
+    const knownTextObjects = new Set([
+      'iw',
+      'aw',
+      'iW',
+      'aW',
+      'ip',
+      'ap',
+      'is',
+      'as',
+      'it',
+      'at',
+      'i(',
+      'a(',
+      'i)',
+      'a)',
+      'i[',
+      'a[',
+      'i]',
+      'a]',
+      'i{',
+      'a{',
+      'i}',
+      'a}',
+      'i<',
+      'a<',
+      'i>',
+      'a>',
+      'i"',
+      'a"',
+      "i'",
+      "a'",
+      'i`',
+      'a`',
+    ]);
+    if (knownTextObjects.has(remOpStr)) {
       result.textObject = remOpStr;
       result.isComplete = true;
       result.isValid = true;
