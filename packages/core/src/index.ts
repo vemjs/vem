@@ -17,6 +17,7 @@ export {
   getWordForward,
   getWordBackward,
   getWordEndForward,
+  getWordEndBackward,
   getTextObjectRange,
 } from './motions';
 export { parseKeys } from './parser';
