@@ -4,6 +4,7 @@ import {
   getWordForward,
   getWordBackward,
   getWordEndForward,
+  getWordEndBackward,
   getWORDForward,
   getWORDBackward,
   getWORDEndForward,
@@ -216,6 +217,9 @@ export class VemEditorState {
   private publishDiagnosticsCallbacks: ((diagnostics: Diagnostic[]) => void)[] = [];
   private scrollToLineCallbacks: ((line: number) => void)[] = [];
   private openFileUnderCursorCallbacks: ((path: string) => void)[] = [];
+  private windowActionCallbacks: ((action: string) => void)[] = [];
+  /** The cursor position BEFORE the last change (for g;/g,). */
+  private changeList: Position[] = [];
   /** Number of visible lines in the viewport, set by the renderer (for H/M/L). */
   public visibleLines: number = 0;
   /** Current scroll line offset, set by the renderer (for H/M/L). */
@@ -910,6 +914,50 @@ export class VemEditorState {
         this.triggerChange();
         return;
       }
+
+      // Insert mode special keys (Ctrl-w, Ctrl-u, Ctrl-t, Ctrl-d, Ctrl-r, etc.)
+      if (key === '<C-w>') {
+        this.handleCtrlWInInsert();
+        this.triggerChange();
+        return;
+      }
+      if (key === '<C-u>') {
+        this.handleCtrlUInInsert();
+        this.triggerChange();
+        return;
+      }
+      if (key === '<C-t>') {
+        this.handleIndentInInsert(1);
+        this.triggerChange();
+        return;
+      }
+      if (key === '<C-d>') {
+        this.handleIndentInInsert(-1);
+        this.triggerChange();
+        return;
+      }
+      if (key === '<C-r>') {
+        // Ctrl-r in INSERT: insert from register
+        // We need to await the next key. For now, paste the unnamed register.
+        this.saveStateForUndo();
+        if (this.register) {
+          this.handleCharInputInInsert(this.register.text);
+        }
+        this.triggerChange();
+        return;
+      }
+      if (key === '<C-n>') {
+        // Simple word completion: cycle through words in the buffer
+        this.handleWordCompletion(1);
+        this.triggerChange();
+        return;
+      }
+      if (key === '<C-p>') {
+        this.handleWordCompletion(-1);
+        this.triggerChange();
+        return;
+      }
+
       return;
     }
 
@@ -1012,6 +1060,99 @@ export class VemEditorState {
     this.desiredCol = 0;
     this.buffer.setLine(oldLine, before);
     this.buffer.insertLine(oldLine + 1, after);
+  }
+
+  /** `<C-w>` in INSERT: delete word back from cursor. */
+  private handleCtrlWInInsert(): void {
+    if (!this.isInsertMutated) {
+      this.saveStateForUndo();
+      this.isInsertMutated = true;
+    }
+    const line = this.buffer.getLine(this.cursor.line);
+    const before = line.substring(0, this.cursor.character);
+    const after = line.substring(this.cursor.character);
+    // Delete back to start of word (or previous non-space, then word-start)
+    const trimmed = before.trimEnd();
+    const spaceIdx = trimmed.lastIndexOf(' ');
+    const wordStart = spaceIdx === -1 ? 0 : spaceIdx + 1;
+    const remaining = before.substring(0, wordStart);
+    this.buffer.setLine(this.cursor.line, remaining + after);
+    this.cursor.character = remaining.length;
+    this.desiredCol = this.cursor.character;
+  }
+
+  /** `<C-u>` in INSERT: delete from cursor to start of line. */
+  private handleCtrlUInInsert(): void {
+    if (!this.isInsertMutated) {
+      this.saveStateForUndo();
+      this.isInsertMutated = true;
+    }
+    const line = this.buffer.getLine(this.cursor.line);
+    const after = line.substring(this.cursor.character);
+    this.buffer.setLine(this.cursor.line, after);
+    this.cursor.character = 0;
+    this.desiredCol = 0;
+  }
+
+  /** `<C-t>`/`<C-d>` in INSERT: indent/outdent the current line (shiftwidth = 2). */
+  private handleIndentInInsert(dir: number): void {
+    if (!this.isInsertMutated) {
+      this.saveStateForUndo();
+      this.isInsertMutated = true;
+    }
+    const line = this.buffer.getLine(this.cursor.line);
+    const indent = 2; // shiftwidth
+    if (dir > 0) {
+      const spaces = ' '.repeat(indent);
+      this.buffer.setLine(this.cursor.line, spaces + line);
+      this.cursor.character += indent;
+      this.desiredCol = this.cursor.character;
+    } else {
+      const before = line.substring(0, indent);
+      const leadingSpaces = before.match(/^ */)?.[0].length ?? 0;
+      const remove = Math.min(leadingSpaces, indent);
+      this.buffer.setLine(this.cursor.line, line.substring(remove));
+      this.cursor.character = Math.max(0, this.cursor.character - remove);
+      this.desiredCol = this.cursor.character;
+    }
+  }
+
+  /** `<C-n>`/`<C-p>` in INSERT: simple word completion based on buffer content. */
+  private wordCompletionMatches: string[] = [];
+  private wordCompletionIndex = -1;
+
+  private handleWordCompletion(dir: number): void {
+    if (this.wordCompletionMatches.length === 0 || (dir === 1 && this.wordCompletionIndex === -1)) {
+      // Collect all unique words from buffer (first call)
+      const words = new Set<string>();
+      for (let i = 0; i < this.buffer.getLineCount(); i++) {
+        const line = this.buffer.getLine(i);
+        for (const w of line.split(/[^a-zA-Z0-9_]+/)) {
+          if (w.length >= 2 && !/^\d+$/.test(w)) words.add(w);
+        }
+      }
+      this.wordCompletionMatches = Array.from(words).sort();
+      this.wordCompletionIndex = -1;
+    }
+    if (this.wordCompletionMatches.length === 0) return;
+
+    this.wordCompletionIndex = (this.wordCompletionIndex + 1) % this.wordCompletionMatches.length;
+    if (this.wordCompletionIndex < 0)
+      this.wordCompletionIndex = this.wordCompletionMatches.length - 1;
+
+    const word = this.wordCompletionMatches[this.wordCompletionIndex];
+    const line = this.buffer.getLine(this.cursor.line);
+    const before = line.substring(0, this.cursor.character);
+    const after = line.substring(this.cursor.character);
+    // Replace the partial word under/behind cursor with the completion
+    const partial = before.replace(/[a-zA-Z0-9_]+$/, '');
+    if (!this.isInsertMutated) {
+      this.saveStateForUndo();
+      this.isInsertMutated = true;
+    }
+    this.buffer.setLine(this.cursor.line, partial + word + after);
+    this.cursor.character = partial.length + word.length;
+    this.desiredCol = this.cursor.character;
   }
 
   // --- Command Execution ---
@@ -1346,6 +1487,99 @@ export class VemEditorState {
         case 'ZQ':
           this.triggerQuit(true);
           break;
+
+        // --- g; / g,: change list navigation ---
+        case 'g;':
+          if (this.changeList.length > 0) {
+            const pos = this.changeList[this.changeList.length - 1];
+            this.cursor.line = pos.line;
+            this.cursor.character = pos.character;
+            this.desiredCol = pos.character;
+          }
+          break;
+        case 'g,':
+          if (this.changeList.length > 1) {
+            const pos = this.changeList[this.changeList.length - 2];
+            this.cursor.line = pos.line;
+            this.cursor.character = pos.character;
+            this.desiredCol = pos.character;
+          }
+          break;
+
+        // --- gu / gU: make lowercase / uppercase ---
+        case 'gu':
+          this.saveStateForUndo();
+          this.toggleCaseRange(this.cursor.line, this.cursor.line, false);
+          break;
+        case 'gU':
+          this.saveStateForUndo();
+          this.toggleCaseRange(this.cursor.line, this.cursor.line, true);
+          break;
+
+        // --- gJ: join without inserting space ---
+        case 'gJ':
+          this.saveStateForUndo();
+          this.joinLinesNoSpace(cmd.count);
+          break;
+
+        // --- z. / z- / z<CR>: redraw viewport ---
+        case 'z.':
+          this.triggerScrollToLine(
+            this.cursor.line - Math.max(1, Math.floor(this.visibleLines / 2)),
+          );
+          break;
+        case 'z-':
+          this.triggerScrollToLine(
+            Math.max(0, this.cursor.line - Math.max(1, this.visibleLines) + 1),
+          );
+          break;
+        case 'z\n':
+          this.triggerScrollToLine(this.cursor.line);
+          break;
+
+        // --- ge: go backwards to end of previous word ---
+        case 'ge':
+          this.moveCursorByMotion('ge', cmd.count);
+          break;
+
+        // --- <C-w> window commands ---
+        case 'C-w-h':
+          this.triggerWindowAction('left');
+          break;
+        case 'C-w-j':
+          this.triggerWindowAction('down');
+          break;
+        case 'C-w-k':
+          this.triggerWindowAction('up');
+          break;
+        case 'C-w-l':
+          this.triggerWindowAction('right');
+          break;
+        case 'C-w-w':
+          this.triggerWindowAction('next');
+          break;
+        case 'C-w-q':
+          this.triggerQuit(false);
+          break;
+        case 'C-w-o':
+          this.triggerWindowAction('only');
+          break;
+        case 'C-w-v':
+          this.triggerSplit('vertical');
+          break;
+        case 'C-w-s':
+          this.triggerSplit('horizontal');
+          break;
+
+        // --- > / < operators: indent/outdent ---
+        case '>':
+          this.saveStateForUndo();
+          this.indentLines(this.cursor.line, this.cursor.line, 2);
+          break;
+        case '<':
+          this.saveStateForUndo();
+          this.indentLines(this.cursor.line, this.cursor.line, -2);
+          break;
       }
     }
   }
@@ -1608,6 +1842,57 @@ export class VemEditorState {
     return [result, count];
   }
 
+  /** Toggle case on a range of lines: `true` = uppercase, `false` = lowercase. */
+  private toggleCaseRange(startLine: number, endLine: number, toUpper: boolean): void {
+    for (let l = startLine; l <= endLine; l++) {
+      const line = this.buffer.getLine(l);
+      const chars = [...line].map((c) => {
+        if (toUpper) return c.toUpperCase();
+        return c.toLowerCase();
+      });
+      this.buffer.setLine(l, chars.join(''));
+    }
+  }
+
+  /** `gJ`: join lines without inserting a space. */
+  private joinLinesNoSpace(count: number): void {
+    const start = this.cursor.line;
+    const last = this.buffer.getLineCount() - 1;
+    const end = Math.min(start + count, last);
+    let text = this.buffer.getLine(start);
+    for (let l = start + 1; l <= end; l++) {
+      text += this.buffer.getLine(l);
+    }
+    this.buffer.setLine(start, text);
+    this.buffer.deleteLines(start + 1, end);
+    this.cursor.character = text.length;
+    this.desiredCol = this.cursor.character;
+  }
+
+  /** Indent or outdent a range of lines by `amount` spaces (negative = outdent). */
+  private indentLines(startLine: number, endLine: number, amount: number): void {
+    for (let l = startLine; l <= endLine; l++) {
+      const line = this.buffer.getLine(l);
+      if (amount > 0) {
+        this.buffer.setLine(l, ' '.repeat(amount) + line);
+      } else {
+        const remove = Math.min(-amount, line.search(/\S|$/) || 0);
+        this.buffer.setLine(l, line.substring(remove));
+      }
+    }
+  }
+
+  /** Trigger a window action (left/right/up/down/next/only). */
+  public onWindowAction(callback: (action: string) => void): void {
+    this.windowActionCallbacks.push(callback);
+  }
+
+  private triggerWindowAction(action: string): void {
+    for (const cb of this.windowActionCallbacks) {
+      cb(action);
+    }
+  }
+
   private executeSetOption(option: string): void {
     // Vim's real syntax for OS-clipboard integration: `:set clipboard=unnamed`
     // (or `unnamedplus`) routes y/d/c/x/p/P through the system clipboard
@@ -1733,6 +2018,10 @@ export class VemEditorState {
           break;
         case 'e':
           this.cursor = getWordEndForward(this.buffer, this.cursor);
+          this.desiredCol = this.cursor.character;
+          break;
+        case 'ge':
+          this.cursor = getWordEndBackward(this.buffer, this.cursor);
           this.desiredCol = this.cursor.character;
           break;
         case 'W':
@@ -2282,6 +2571,9 @@ export class VemEditorState {
   private saveStateForUndo(): void {
     this.modified = true;
     this.undoManager.push(this.buffer.getLines());
+    // Track change position for g;/g,
+    this.changeList.push({ ...this.cursor });
+    if (this.changeList.length > 100) this.changeList.shift();
   }
 
   /** True once the buffer has been edited; drives Vim's intro-screen dismissal. */

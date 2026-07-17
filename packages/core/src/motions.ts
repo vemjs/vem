@@ -154,6 +154,64 @@ export function getWordEndForward(buffer: VimBuffer, start: Position): Position 
   return start;
 }
 
+/** `ge`: go backwards to the end of the previous word. */
+export function getWordEndBackward(buffer: VimBuffer, start: Position): Position {
+  // Vim's ge: find the end of the previous word.
+  // First skip back past any whitespace and the current word-like run.
+  let curr: Position | null = start;
+  const startChar = buffer.getLine(start.line)[start.character];
+  if (!startChar) {
+    const prev = prevPosition(buffer, start);
+    if (!prev) return start;
+    curr = prev;
+  }
+
+  let hadWordChar = false;
+  // Skip back past the current word (so we go to the END of the PREVIOUS word)
+  while (curr) {
+    const c = buffer.getLine(curr.line)[curr.character];
+    if (!c || c === '') break;
+    if (getCharClass(c) !== 1) hadWordChar = true;
+    if (hadWordChar && getCharClass(c) === 1) {
+      // We just passed through the end of the word into whitespace.
+      // Now continue back to find the END of the previous word.
+      // Actually, we're now IN whitespace before the previous word. Jump to end of word.
+      // But first we need to skip the whitespace.
+      break;
+    }
+    const prev = prevPosition(buffer, curr);
+    if (!prev) return curr;
+    curr = prev;
+  }
+
+  // Skip any whitespace before the previous word
+  while (curr) {
+    const c = buffer.getLine(curr.line)[curr.character];
+    if (!c || getCharClass(c) !== 1) break;
+    const prev = prevPosition(buffer, curr);
+    if (!prev) return curr;
+    curr = prev;
+  }
+
+  // Now curr is at the first non-whitespace char of the previous word (or its start).
+  // We need the END of this word. Scan forward through the same class.
+  if (curr) {
+    const targetClass = getCharClass(buffer.getLine(curr.line)[curr.character]);
+    if (targetClass !== 0) {
+      // Another version: find the END of this word and put cursor there
+      while (curr) {
+        const next = nextPosition(buffer, curr);
+        if (!next) return curr;
+        const nextClass = getCharClass(buffer.getLine(next.line)[next.character]);
+        if (nextClass !== targetClass || nextClass === 0) return curr;
+        curr = next;
+      }
+    }
+  }
+
+  return curr || start;
+}
+
 export function getTextObjectRange(
   buffer: VimBuffer,
   pos: Position,

@@ -16,7 +16,24 @@ export interface ParsedCommand {
 
 // One shared motion vocabulary: word/WORD, line bounds, file bounds, bracket
 // match. Everything here is valid bare, after an operator, and in Visual mode.
-const motionKeys = ['h', 'j', 'k', 'l', 'w', 'b', 'e', 'W', 'B', 'E', '0', '^', '$', 'G', '%'];
+const motionKeys = [
+  'h',
+  'j',
+  'k',
+  'l',
+  'w',
+  'b',
+  'e',
+  'ge',
+  'W',
+  'B',
+  'E',
+  '0',
+  '^',
+  '$',
+  'G',
+  '%',
+];
 
 // f/F/t/T take a trailing target character, so — unlike the rest of
 // motionKeys — they're only "complete" once a second key arrives.
@@ -32,7 +49,7 @@ function matchCharMotion(str: string): { motion: string; findChar?: string } | n
 }
 
 // Two-key prefixes that wait for a second key (like 'g', 'z', 'Z', '[', ']')
-const prefixKeys = ['g', 'z', 'Z', '[', ']'];
+const prefixKeys = ['g', 'z', 'Z', '[', ']', '<C-w>'];
 
 // Commands that standalone (single key or already-known pair)
 const normalCommands = [
@@ -311,6 +328,19 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
     // Prefixes (g, z, Z, [, ]) — await second key
     if (prefixKeys.includes(remNormalStr)) {
       result.isComplete = false;
+      result.isValid = true;
+      return result;
+    }
+
+    // <C-w> prefix (handled separately because remNormalStr = '<C-w>h')
+    if (remNormalStr === '<C-w>') {
+      result.isComplete = false;
+      result.isValid = true;
+      return result;
+    }
+    if (remNormalStr.startsWith('<C-w>') && remNormalStr.length > '<C-w>'.length) {
+      result.command = 'C-w-' + remNormalStr.substring('<C-w>'.length);
+      result.isComplete = true;
       result.isValid = true;
       return result;
     }
