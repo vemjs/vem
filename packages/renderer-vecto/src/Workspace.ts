@@ -101,8 +101,11 @@ export class VemWorkspace extends UIComponent {
     this.tabsComponent.remove(removed.layout);
 
     if (this.buffers.length === 0) {
+      // Reset first so the workspace stays valid either way; a desktop host
+      // that quits on last-close (Vim's own `:q` exit) never renders it.
       const fresh = this.makeBuffer('', 'untitled');
       this.syncTabs(fresh.id);
+      this.lastTabCloseCallback?.();
       return;
     }
 
@@ -119,6 +122,18 @@ export class VemWorkspace extends UIComponent {
   public closeActiveTab(): void {
     this.closeTab(this.tabsComponent.value);
   }
+
+  /**
+   * Notify when the LAST tab was closed (the workspace has already reset
+   * itself to a fresh untitled buffer). The web build ignores this — a
+   * browser tab can't quit — while the desktop build exits the app,
+   * matching Vim's `:q` on the final window.
+   */
+  public onLastTabClose(callback: () => void): void {
+    this.lastTabCloseCallback = callback;
+  }
+
+  private lastTabCloseCallback: (() => void) | null = null;
 
   public getActiveLayout(): WorkspaceLayout | null {
     const active = this.buffers.find((b) => b.id === this.tabsComponent.value);

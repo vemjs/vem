@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { VemEditorState } from '@vemjs/core';
-import { PluginRegistry, type VemPlugin } from './index';
+import { PluginRegistry, type PluginContext, type VemPlugin } from './index';
 
 describe('Plugin System', () => {
   it('should register and activate a plugin', () => {
@@ -123,5 +123,71 @@ describe('Plugin System', () => {
     editor.handleKey('Enter');
 
     expect(saved).toBe(true);
+  });
+});
+
+describe('PluginRegistry idempotence & capabilities', () => {
+  it('skips re-registration so repeated activation cannot stack listeners', () => {
+    const editor = new VemEditorState('line1');
+    const registry = new PluginRegistry(editor);
+
+    let activations = 0;
+    let changes = 0;
+    const plugin: VemPlugin = {
+      name: 'once',
+      version: '1.0.0',
+      activate(context) {
+        activations++;
+        context.onDidChangeBuffer(() => changes++);
+      },
+    };
+
+    registry.register(plugin);
+    registry.register(plugin);
+    expect(activations).toBe(1);
+    expect(registry.has('once')).toBe(true);
+
+    editor.setMode('INSERT');
+    editor.handleKey('x');
+    expect(changes).toBe(1);
+  });
+
+  it('passes host capabilities through to the plugin context', async () => {
+    const editor = new VemEditorState('line1');
+    const opened: string[] = [];
+    const registry = new PluginRegistry(editor, {
+      openFile: (path) => {
+        opened.push(path);
+      },
+      gitDiff: async () => '@@ -1 +1 @@',
+    });
+
+    let context: PluginContext | null = null;
+    registry.register({
+      name: 'capable',
+      version: '1.0.0',
+      activate(ctx) {
+        context = ctx;
+      },
+    });
+
+    await context!.openFile!('src/a.ts');
+    expect(opened).toEqual(['src/a.ts']);
+    expect(await context!.gitDiff!('src/a.ts')).toBe('@@ -1 +1 @@');
+  });
+
+  it('leaves capabilities undefined on a bare registry (plugins must degrade)', () => {
+    const editor = new VemEditorState('line1');
+    const registry = new PluginRegistry(editor);
+    let context: PluginContext | null = null;
+    registry.register({
+      name: 'bare',
+      version: '1.0.0',
+      activate(ctx) {
+        context = ctx;
+      },
+    });
+    expect(context!.openFile).toBeUndefined();
+    expect(context!.gitDiff).toBeUndefined();
   });
 });

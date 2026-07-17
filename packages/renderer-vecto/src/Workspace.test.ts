@@ -561,3 +561,27 @@ describe('WorkspaceExplorer pluggable fs provider', () => {
     expect(state.statusMessage).toBe("E45: 'readonly' option is set (add ! to override)");
   });
 });
+
+describe('VemWorkspace.onLastTabClose', () => {
+  it('fires after the final tab closes and the workspace has self-reset', () => {
+    const workspace = new VemWorkspace(800, 600, 'only');
+    // stub scene inline (same shape as stubScene above, scoped to this block)
+    Object.defineProperty(workspace, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+    let fired = 0;
+    workspace.onLastTabClose(() => fired++);
+
+    const only = workspace.getActiveBufferId();
+    workspace.closeTab(only);
+    expect(fired).toBe(1);
+    // Workspace stayed valid for hosts that don't quit.
+    expect(workspace.getActiveLayout()).not.toBeNull();
+
+    // Closing a non-final tab must not fire it.
+    workspace.openBuffer('two', 'two');
+    workspace.closeActiveTab();
+    expect(fired).toBe(1);
+  });
+});

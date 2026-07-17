@@ -977,3 +977,40 @@ describe('navigation keys (Arrow/Home/End/PageUp/PageDown)', () => {
     expect(editor.getCursor().line).toBe(0);
   });
 });
+
+describe('VemEditorState.onDidCreateState', () => {
+  afterEach(() => {
+    VemEditorState.resetDefaults();
+  });
+
+  it('fires for every construction, however deep, until unsubscribed', () => {
+    const seen: VemEditorState[] = [];
+    const off = VemEditorState.onDidCreateState((state) => seen.push(state));
+
+    const a = new VemEditorState('one');
+    const b = new VemEditorState();
+    expect(seen).toEqual([a, b]);
+
+    off();
+    new VemEditorState('three');
+    expect(seen.length).toBe(2);
+  });
+
+  it('is cleared by resetDefaults (test isolation)', () => {
+    let calls = 0;
+    VemEditorState.onDidCreateState(() => calls++);
+    VemEditorState.resetDefaults();
+    new VemEditorState();
+    expect(calls).toBe(0);
+  });
+});
+
+describe('VemEditorState.executePluginCommand', () => {
+  it('routes a command name through attached listeners (public palette API)', () => {
+    const editor = new VemEditorState();
+    const executed: string[] = [];
+    editor.onExecutePluginCommand((name) => executed.push(name));
+    editor.executePluginCommand('layout.toggleSidebar');
+    expect(executed).toEqual(['layout.toggleSidebar']);
+  });
+});
