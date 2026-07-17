@@ -214,6 +214,18 @@ export class VemEditorState {
   private pluginCommandCallbacks: ((commandName: string) => void)[] = [];
   private diagnostics: Diagnostic[] = [];
   private publishDiagnosticsCallbacks: ((diagnostics: Diagnostic[]) => void)[] = [];
+  private scrollToLineCallbacks: ((line: number) => void)[] = [];
+  private openFileUnderCursorCallbacks: ((path: string) => void)[] = [];
+  /** Number of visible lines in the viewport, set by the renderer (for H/M/L). */
+  public visibleLines: number = 0;
+  /** Current scroll line offset, set by the renderer (for H/M/L). */
+  public viewportTop: number = 0;
+  /** Stored marks (lowercase per-buffer, uppercase global shared). */
+  private marks: Map<string, Position> = new Map();
+  /** The last insert position (for `gi`). */
+  private lastInsertPosition: Position | null = null;
+  /** The last visual selection (for `gv`). */
+  private lastVisualSelection: VisualSelection | null = null;
 
   constructor(initialText?: string) {
     this.buffer = new VimBuffer(initialText);
@@ -319,6 +331,26 @@ export class VemEditorState {
 
   public onExecutePluginCommand(callback: (commandName: string) => void): void {
     this.pluginCommandCallbacks.push(callback);
+  }
+
+  public onScrollToLine(callback: (line: number) => void): void {
+    this.scrollToLineCallbacks.push(callback);
+  }
+
+  public onOpenFileUnderCursor(callback: (path: string) => void): void {
+    this.openFileUnderCursorCallbacks.push(callback);
+  }
+
+  private triggerScrollToLine(line: number): void {
+    for (const cb of this.scrollToLineCallbacks) {
+      cb(line);
+    }
+  }
+
+  private triggerOpenFileUnderCursor(path: string): void {
+    for (const cb of this.openFileUnderCursorCallbacks) {
+      cb(path);
+    }
   }
 
   public onPublishDiagnostics(callback: (diagnostics: Diagnostic[]) => void): void {
@@ -488,6 +520,19 @@ export class VemEditorState {
     // Handle exiting insert mode
     if (this.mode === 'INSERT') {
       this.isInsertMutated = false;
+    }
+
+    // Track last insert position for `gi`
+    if (mode === 'INSERT') {
+      this.lastInsertPosition = { ...this.cursor };
+      // Inserting before the last char (a) or at end (A) goes one right
+    }
+
+    // Store last visual selection for `gv` when exiting VISUAL
+    if (this.mode === 'VISUAL' && mode !== 'VISUAL') {
+      if (this.visualSelection) {
+        this.lastVisualSelection = { ...this.visualSelection };
+      }
     }
 
     this.mode = mode;
@@ -1150,6 +1195,157 @@ export class VemEditorState {
         case '<C-y>':
           this.moveCursorVertically(-1);
           break;
+
+        // --- zz/zt/zb: scroll viewport (callbacks wired to the renderer entity) ---
+        case 'zz': {
+          const half = Math.max(1, Math.floor(this.visibleLines / 2));
+          this.triggerScrollToLine(Math.max(0, this.cursor.line - half));
+          break;
+        }
+        case 'zt': {
+          this.triggerScrollToLine(this.cursor.line);
+          break;
+        }
+        case 'zb': {
+          this.triggerScrollToLine(
+            Math.max(0, this.cursor.line - Math.max(1, this.visibleLines) + 1),
+          );
+          break;
+        }
+
+        // --- H/M/L: cursor to window top/middle/bottom ---
+        case 'H': {
+          const topLine = this.viewportTop;
+          this.cursor.line = Math.min(this.buffer.getLineCount() - 1, topLine);
+          this.cursor.character = 0;
+          this.desiredCol = 0;
+          break;
+        }
+        case 'M': {
+          const visible = this.visibleLines || Math.floor(this.halfPageLines);
+          const midLine = this.viewportTop + Math.floor(visible / 2);
+          this.cursor.line = Math.min(this.buffer.getLineCount() - 1, midLine);
+          this.cursor.character = 0;
+          this.desiredCol = 0;
+          break;
+        }
+        case 'L': {
+          const visible = this.visibleLines || Math.floor(this.halfPageLines);
+          const botLine = this.viewportTop + visible - 1;
+          this.cursor.line = Math.min(this.buffer.getLineCount() - 1, botLine);
+          this.cursor.character = 0;
+          this.desiredCol = 0;
+          break;
+        }
+
+        // --- J: join lines ---
+        case 'J':
+          this.saveStateForUndo();
+          this.joinLines(cmd.count);
+          break;
+
+        // --- ~: toggle case ---
+        case '~':
+          this.saveStateForUndo();
+          this.toggleCase(cmd.count);
+          break;
+
+        // --- {/}: paragraph jumps ---
+        case '{':
+          this.jumpParagraph(-cmd.count);
+          break;
+        case '}':
+          this.jumpParagraph(cmd.count);
+          break;
+
+        // --- gf: open file under cursor (caller-provided callback) ---
+        case 'gf': {
+          const word = this.getWordAtCursor();
+          if (word) this.triggerOpenFileUnderCursor(word);
+          break;
+        }
+
+        // --- gv: reselect last visual selection ---
+        case 'gv':
+          if (this.lastVisualSelection) {
+            this.visualSelection = { ...this.lastVisualSelection };
+            this.cursor.line = this.lastVisualSelection.active.line;
+            this.cursor.character = this.lastVisualSelection.active.character;
+            this.desiredCol = this.lastVisualSelection.active.character;
+            this.setMode('VISUAL');
+          }
+          break;
+
+        // --- gi: go to last insert position ---
+        case 'gi':
+          if (this.lastInsertPosition) {
+            this.cursor.line = this.lastInsertPosition.line;
+            this.cursor.character = this.lastInsertPosition.character;
+            this.desiredCol = this.lastInsertPosition.character;
+            this.setMode('INSERT');
+          }
+          break;
+
+        // --- [[/]]: section jumps (same as {/} for now) ---
+        case '[[':
+          this.jumpParagraph(-cmd.count);
+          break;
+        case ']]':
+          this.jumpParagraph(cmd.count);
+          break;
+        case '[]':
+          this.jumpParagraph(cmd.count);
+          break;
+        case '][':
+          this.jumpParagraph(-cmd.count);
+          break;
+
+        // --- <C-a>/<C-x>: increment/decrement number under cursor ---
+        case '<C-a>':
+          this.saveStateForUndo();
+          this.addNumber(cmd.count);
+          break;
+        case '<C-x>':
+          this.saveStateForUndo();
+          this.addNumber(-cmd.count);
+          break;
+
+        // --- m{a-zA-Z}: set mark ---
+        case 'm':
+          if (cmd.mark) {
+            this.marks.set(cmd.mark, { ...this.cursor });
+          }
+          break;
+
+        // --- `{a-zA-Z} / '{a-zA-Z}: jump to mark ---
+        case '`':
+        case "'": {
+          if (cmd.mark) {
+            const pos = this.marks.get(cmd.mark);
+            if (pos) {
+              if (cmd.command === "'") {
+                this.cursor.line = pos.line;
+                this.cursor.character = 0;
+              } else {
+                this.cursor.line = pos.line;
+                this.cursor.character = pos.character;
+              }
+              this.desiredCol = this.cursor.character;
+            }
+          }
+          break;
+        }
+
+        // --- ZZ/ZQ: write+quit / quit+discard (via existing quit/save callbacks) ---
+        case 'ZZ':
+          // Save then quit
+          this.modified = false;
+          this.triggerSave();
+          this.triggerQuit(false);
+          break;
+        case 'ZQ':
+          this.triggerQuit(true);
+          break;
       }
     }
   }
@@ -1163,6 +1359,87 @@ export class VemEditorState {
     const lineLen = this.buffer.getLine(this.cursor.line).length;
     const maxChar = this.mode === 'INSERT' ? lineLen : Math.max(0, lineLen - 1);
     this.cursor.character = Math.min(this.desiredCol, maxChar);
+  }
+
+  /** `J`: join `count` lines below the current one, replacing the newline with a space. */
+  private joinLines(count: number): void {
+    const start = this.cursor.line;
+    const last = this.buffer.getLineCount() - 1;
+    const end = Math.min(start + count, last);
+    let text = this.buffer.getLine(start);
+    for (let l = start + 1; l <= end; l++) {
+      const next = this.buffer.getLine(l);
+      text += ' ' + next.trimStart();
+    }
+    this.buffer.setLine(start, text);
+    this.buffer.deleteLines(start + 1, end);
+    this.cursor.character = text.length - (end > start ? 0 : 0); // end of joined line
+    this.desiredCol = this.cursor.character;
+  }
+
+  /** `~`: toggle case of `count` characters under and right of cursor. */
+  private toggleCase(count: number): void {
+    const line = this.buffer.getLine(this.cursor.line);
+    const chars = [...line];
+    const end = Math.min(this.cursor.character + count, chars.length);
+    for (let i = this.cursor.character; i < end; i++) {
+      const c = chars[i];
+      if (c >= 'a' && c <= 'z') chars[i] = c.toUpperCase();
+      else if (c >= 'A' && c <= 'Z') chars[i] = c.toLowerCase();
+    }
+    this.buffer.setLine(this.cursor.line, chars.join(''));
+    this.cursor.character = Math.max(0, end - 1);
+    this.desiredCol = this.cursor.character;
+  }
+
+  /** Jump to the next/prev paragraph boundary (`{`/`}`). */
+  private jumpParagraph(direction: number): void {
+    const last = this.buffer.getLineCount() - 1;
+    let line = this.cursor.line;
+    if (direction > 0) {
+      while (line < last) {
+        line++;
+        if (this.buffer.getLine(line).trim() === '') break;
+        // empty line = paragraph boundary
+      }
+    } else {
+      while (line > 0) {
+        line--;
+        if (this.buffer.getLine(line).trim() === '') break;
+      }
+    }
+    this.cursor.line = Math.max(0, Math.min(last, line));
+    this.cursor.character = 0;
+    this.desiredCol = 0;
+  }
+
+  /** Increment/decrement the first number on the current line (`<C-a>`/`<C-x>`). */
+  private addNumber(delta: number): void {
+    const line = this.buffer.getLine(this.cursor.line);
+    const match = line.match(/-?\d+(\.\d+)?/);
+    if (match && match.index !== undefined) {
+      const numStr = match[0];
+      const isFloat = numStr.includes('.');
+      const num = isFloat ? parseFloat(numStr) : parseInt(numStr, 10);
+      const newNum = isFloat ? num + delta : num + delta;
+      const newNumStr = isFloat ? newNum.toFixed(numStr.split('.')[1].length) : String(newNum);
+      const before = line.substring(0, match.index);
+      const after = line.substring(match.index + numStr.length);
+      this.buffer.setLine(this.cursor.line, before + newNumStr + after);
+    }
+  }
+
+  /** Get the word under the cursor (for `gf`). */
+  private getWordAtCursor(): string | null {
+    const line = this.buffer.getLine(this.cursor.line);
+    const pos = this.cursor.character;
+    if (!line || pos >= line.length) return null;
+    let start = pos;
+    let end = pos;
+    const isWordChar = (c: string) => /^[\w.]$/.test(c);
+    while (start > 0 && isWordChar(line[start - 1])) start--;
+    while (end < line.length && isWordChar(line[end])) end++;
+    return start < end ? line.substring(start, end) : null;
   }
 
   private static globalExCommands: Map<string, (arg: string, state: VemEditorState) => void> =
