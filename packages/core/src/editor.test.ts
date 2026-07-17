@@ -992,7 +992,8 @@ describe('VemEditorState.onDidCreateState', () => {
     expect(seen).toEqual([a, b]);
 
     off();
-    new VemEditorState('three');
+    const c = new VemEditorState('three');
+    expect(seen).not.toContain(c);
     expect(seen.length).toBe(2);
   });
 
@@ -1000,7 +1001,8 @@ describe('VemEditorState.onDidCreateState', () => {
     let calls = 0;
     VemEditorState.onDidCreateState(() => calls++);
     VemEditorState.resetDefaults();
-    new VemEditorState();
+    const after = new VemEditorState();
+    expect(after.getMode()).toBe('NORMAL');
     expect(calls).toBe(0);
   });
 });
