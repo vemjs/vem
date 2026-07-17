@@ -1,5 +1,14 @@
 # @vemjs/renderer-vecto
 
+## 0.4.2
+
+### Patch Changes
+
+- 7476fbd: A lone buffer no longer shows a tab bar: `VemWorkspace` opts into `@vectojs/ui` 1.9.5's `autoHideTabBar` (Vim `showtabline=1` semantics), so a fresh start renders only the intro splash — like `vim` with no arguments — and the bar appears once a second buffer opens. Layout heights follow the live bar height via `effectiveTabBarHeight`. Engine floors raised to `@vectojs/core@^1.9.2` / `@vectojs/ui@^1.9.5`.
+- 7476fbd: Plugin-architecture fixes from the 2026-07-16 audit. `@vemjs/core`: new static `VemEditorState.onDidCreateState(cb)` hook (fires for every state construction — splits, new tabs, snapshot restores — so hosts can attach per-state services like the plugin registry; returns an unsubscribe, cleared by `resetDefaults`) and `executePluginCommand` is now public (command palettes no longer need to reach into the private callback list). `@vemjs/plugin-api`: `PluginRegistry.register()` is idempotent (re-invocation can no longer stack duplicate buffer/mode/save listeners), new `has(name)`, and the registry accepts optional `PluginHostCapabilities` (`openFile`, `gitDiff`) surfaced on the plugin context — plugins must treat them as absent-able. `@vemjs/renderer-vecto`: `VemWorkspace.onLastTabClose(cb)` notifies hosts after the final tab closes and the workspace has self-reset, letting the desktop build exit like Vim's `:q` while the web build keeps the splash.
+- Updated dependencies [7476fbd]
+  - @vemjs/core@0.3.1
+
 ## 0.4.1
 
 ### Patch Changes
