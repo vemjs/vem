@@ -76,6 +76,19 @@ export class VemWorkspace extends UIComponent {
    * so the caller can associate it with a file handle for save-back.
    */
   public openBuffer(text: string, label = 'untitled'): string {
+    // Dedup: reuse an existing buffer with the same label (file path).
+    // This prevents the same file from appearing in multiple tabs when
+    // the user opens it again via mouse or :e (2026-07-17 audit finding).
+    if (label !== 'untitled') {
+      const existing = this.buffers.find((b) => b.label === label);
+      if (existing) {
+        // Update text if the file changed on disk, then focus its tab.
+        existing.text = text;
+        existing.layout.setText(text);
+        this.syncTabs(existing.id);
+        return existing.id;
+      }
+    }
     const entry = this.makeBuffer(text, label);
     this.syncTabs(entry.id);
     return entry.id;
