@@ -172,6 +172,7 @@ export class VemEditorState {
   public static resetDefaults(): void {
     activeDefaultTheme = { ...DEFAULT_THEME };
     activeDefaultLayoutConfig = { ...DEFAULT_LAYOUT_CONFIG };
+    VemEditorState.didCreateStateCallbacks = [];
   }
 
   public theme: VemTheme = { ...activeDefaultTheme };
@@ -226,7 +227,28 @@ export class VemEditorState {
     setTimeout(() => {
       this.triggerDidOpenBuffer();
     }, 0);
+    for (const cb of VemEditorState.didCreateStateCallbacks) {
+      cb(this);
+    }
   }
+
+  /**
+   * Static hook fired at the end of every VemEditorState construction —
+   * states are created deep inside the renderer (splits, new tabs, snapshot
+   * restore), so a host that must attach per-state services (the plugin
+   * registry, project-file lists) has no other seam that covers them all.
+   * Register before constructing any workspace. Returns an unsubscribe
+   * function.
+   */
+  public static onDidCreateState(callback: (state: VemEditorState) => void): () => void {
+    VemEditorState.didCreateStateCallbacks.push(callback);
+    return () => {
+      const idx = VemEditorState.didCreateStateCallbacks.indexOf(callback);
+      if (idx !== -1) VemEditorState.didCreateStateCallbacks.splice(idx, 1);
+    };
+  }
+
+  private static didCreateStateCallbacks: Array<(state: VemEditorState) => void> = [];
 
   // --- Callbacks & Events ---
   public onChange(callback: () => void): void {
@@ -436,7 +458,12 @@ export class VemEditorState {
     }
   }
 
-  private executePluginCommand(commandName: string): void {
+  /**
+   * Run a plugin command by name through every attached registry. Public so
+   * hosts and plugins (e.g. a command palette) can trigger commands without
+   * reaching into the private callback list.
+   */
+  public executePluginCommand(commandName: string): void {
     for (const cb of this.pluginCommandCallbacks) {
       cb(commandName);
     }

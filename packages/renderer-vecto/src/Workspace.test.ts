@@ -63,6 +63,33 @@ describe('VemWorkspace', () => {
     expect(workspace.getActiveLayout()?.getActiveState()?.getText()).toBe('');
   });
 
+  it('hides the tab bar for a lone buffer and shows it from the second one (showtabline=1)', () => {
+    const workspace = new VemWorkspace(800, 600, '');
+    stubScene(workspace);
+    const tabs = (
+      workspace as unknown as {
+        tabsComponent: { effectiveTabBarHeight: number; update(dt: number, t: number): void };
+      }
+    ).tabsComponent;
+
+    // Fresh start = vim with no arguments: no tab bar, full-height buffer.
+    workspace.update(16, 0);
+    expect(tabs.effectiveTabBarHeight).toBe(0);
+    expect(workspace.getActiveLayout()?.height).toBe(600);
+
+    // A second buffer brings the bar back and shrinks the layouts under it.
+    workspace.openBuffer('two', 'two.ts');
+    workspace.update(16, 0);
+    expect(tabs.effectiveTabBarHeight).toBe(30);
+    expect(workspace.getActiveLayout()?.height).toBe(570);
+
+    // Closing back down to one hides it again (last-tab reset included).
+    workspace.closeActiveTab();
+    workspace.update(16, 0);
+    expect(tabs.effectiveTabBarHeight).toBe(0);
+    expect(workspace.getActiveLayout()?.height).toBe(600);
+  });
+
   it('resizes every layout on update so panes track the hosting panel width', () => {
     const workspace = new VemWorkspace(800, 600, 'one');
     stubScene(workspace);
@@ -532,5 +559,29 @@ describe('WorkspaceExplorer pluggable fs provider', () => {
     const state = explorer.getActiveEditorState();
     await runSaveCommand(state);
     expect(state.statusMessage).toBe("E45: 'readonly' option is set (add ! to override)");
+  });
+});
+
+describe('VemWorkspace.onLastTabClose', () => {
+  it('fires after the final tab closes and the workspace has self-reset', () => {
+    const workspace = new VemWorkspace(800, 600, 'only');
+    // stub scene inline (same shape as stubScene above, scoped to this block)
+    Object.defineProperty(workspace, 'scene', {
+      configurable: true,
+      value: { a11yNeedsReorder: false, markDirty() {}, detachA11y() {} },
+    });
+    let fired = 0;
+    workspace.onLastTabClose(() => fired++);
+
+    const only = workspace.getActiveBufferId();
+    workspace.closeTab(only);
+    expect(fired).toBe(1);
+    // Workspace stayed valid for hosts that don't quit.
+    expect(workspace.getActiveLayout()).not.toBeNull();
+
+    // Closing a non-final tab must not fire it.
+    workspace.openBuffer('two', 'two');
+    workspace.closeActiveTab();
+    expect(fired).toBe(1);
   });
 });

@@ -34,6 +34,10 @@ export class VemWorkspace extends UIComponent {
       tabWidth: 150,
       minTabWidth: 92,
       closable: true,
+      // Vim's showtabline=1: a lone buffer renders full-bleed (fresh start
+      // shows only the intro splash, like `vim` with no arguments); the tab
+      // bar appears once a second buffer opens.
+      autoHideTabBar: true,
       tabs: this.buffers.map((b) => ({ id: b.id, label: b.label, content: b.layout })),
       value: first.id,
       onClose: (id: string) => this.closeTab(id),
@@ -45,7 +49,11 @@ export class VemWorkspace extends UIComponent {
   private makeBuffer(text: string, label: string): BufferEntry {
     this.seq += 1;
     const id = `buf-${this.seq}`;
-    const layout = new WorkspaceLayout(this.width, this.height - TAB_BAR_HEIGHT, text);
+    // During construction the Tabs component doesn't exist yet — the first
+    // buffer is alone, so its bar is hidden (height 0). update() re-syncs
+    // every frame afterwards.
+    const barH = this.tabsComponent?.effectiveTabBarHeight ?? 0;
+    const layout = new WorkspaceLayout(this.width, this.height - barH, text);
     // `:q` on this layout's last pane closes the whole tab.
     layout.onLastPaneClose(() => this.closeTab(id));
     const entry: BufferEntry = { id, label, layout };
@@ -93,8 +101,11 @@ export class VemWorkspace extends UIComponent {
     this.tabsComponent.remove(removed.layout);
 
     if (this.buffers.length === 0) {
+      // Reset first so the workspace stays valid either way; a desktop host
+      // that quits on last-close (Vim's own `:q` exit) never renders it.
       const fresh = this.makeBuffer('', 'untitled');
       this.syncTabs(fresh.id);
+      this.lastTabCloseCallback?.();
       return;
     }
 
@@ -111,6 +122,18 @@ export class VemWorkspace extends UIComponent {
   public closeActiveTab(): void {
     this.closeTab(this.tabsComponent.value);
   }
+
+  /**
+   * Notify when the LAST tab was closed (the workspace has already reset
+   * itself to a fresh untitled buffer). The web build ignores this — a
+   * browser tab can't quit — while the desktop build exits the app,
+   * matching Vim's `:q` on the final window.
+   */
+  public onLastTabClose(callback: () => void): void {
+    this.lastTabCloseCallback = callback;
+  }
+
+  private lastTabCloseCallback: (() => void) | null = null;
 
   public getActiveLayout(): WorkspaceLayout | null {
     const active = this.buffers.find((b) => b.id === this.tabsComponent.value);
@@ -196,9 +219,12 @@ export class VemWorkspace extends UIComponent {
     // Tabs does not size its content entities; without this sync every layout
     // keeps its construction width and escapes the surrounding Panel clip
     // whenever PanelGroup reserves divider space (observed as a 3.2px bleed).
+    // The bar height is dynamic (autoHideTabBar): 0 with a single buffer,
+    // TAB_BAR_HEIGHT once a second one opens.
+    const barH = this.tabsComponent.effectiveTabBarHeight;
     for (const b of this.buffers) {
       b.layout.width = this.width;
-      b.layout.height = this.height - TAB_BAR_HEIGHT;
+      b.layout.height = this.height - barH;
     }
   }
 
