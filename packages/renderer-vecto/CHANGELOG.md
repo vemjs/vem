@@ -1,3 +1,5 @@
+## 0.4.10\n\n### Patch Changes\n\n- Fix a11y change handler duplicating text on i/a after ESC\n
+
 # @vemjs/renderer-vecto
 
 ## 0.4.9
