@@ -281,26 +281,48 @@ export class VemEditorEntity extends UIComponent {
     // System-clipboard wiring for `:set clipboard=unnamed` — core stays
     // DOM-free, so it only calls write() (never no-ops unless the mode is
     // 'system') and expects fresh reads pushed in, since navigator.clipboard
-    // is async everywhere. Gaining focus is the natural refresh point: it's
-    // exactly when the user is about to `p` something they copied elsewhere.
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      const readFromOS = async () => {
-        try {
-          const text = await navigator.clipboard.readText();
-          this.editorState.setSystemClipboardText(text);
-        } catch {
-          // Permission not granted, or clipboard empty — silently skip.
-        }
-      };
-      this.editorState.setClipboardProvider({
-        write: (text: string) => {
-          navigator.clipboard.writeText(text).catch(() => {});
-        },
-        triggerRead: () => {
-          readFromOS();
-        },
+    // is async everywhere.
+    //
+    // Reads happen on focus (natural refresh) AND eagerly after every
+    // keydown — by the time the user presses `p`, the async read from their
+    // last Alt-Tab back into the app has almost certainly resolved and been
+    // cached in the static register, so paste() sees it synchronously.
+    let clipboardReadScheduled = false;
+    const readFromOS = async () => {
+      if (typeof navigator === 'undefined' || !navigator.clipboard) return;
+      if (this.editorState.getClipboardMode() !== 'system') return;
+      try {
+        const text = await navigator.clipboard.readText();
+        this.editorState.setSystemClipboardText(text);
+      } catch {
+        // Permission not granted, or clipboard empty — silently skip.
+      }
+    };
+    const scheduleClipboardRead = () => {
+      if (clipboardReadScheduled) return;
+      clipboardReadScheduled = true;
+      queueMicrotask(() => {
+        clipboardReadScheduled = false;
+        readFromOS();
       });
-    }
+    };
+
+    this.editorState.setClipboardProvider({
+      write: (text: string) => {
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+          navigator.clipboard.writeText(text).catch(() => {});
+        }
+      },
+      triggerRead: () => {
+        scheduleClipboardRead();
+      },
+    });
+
+    this.on('keydown', () => {
+      // Pre-fetch clipboard on every keydown so p/P sees fresh content
+      // without needing an explicit focus event to have already resolved.
+      scheduleClipboardRead();
+    });
 
     this.on('focus', () => {
       attachCompositionListeners(); // IME composition requires focus first
