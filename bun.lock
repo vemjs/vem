@@ -15,29 +15,29 @@
     },
     "packages/core": {
       "name": "@vemjs/core",
-      "version": "0.3.0",
+      "version": "0.7.0",
     },
     "packages/lsp-client": {
       "name": "@vemjs/lsp-client",
-      "version": "0.1.6",
+      "version": "0.1.10",
       "dependencies": {
         "@vemjs/core": "^0.3.0",
       },
     },
     "packages/plugin-api": {
       "name": "@vemjs/plugin-api",
-      "version": "0.1.6",
+      "version": "0.1.11",
       "dependencies": {
         "@vemjs/core": "^0.3.0",
       },
     },
     "packages/renderer-vecto": {
       "name": "@vemjs/renderer-vecto",
-      "version": "0.4.1",
+      "version": "0.4.8",
       "dependencies": {
-        "@vectojs/core": "^1.9.2",
-        "@vectojs/ui": "^1.9.5",
-        "@vemjs/core": "^0.3.0",
+        "@vectojs/core": "^1.11.1",
+        "@vectojs/ui": "^1.11.0",
+        "@vemjs/core": "^0.7.0",
       },
     },
   },
@@ -260,9 +260,9 @@
 
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
-    "@vectojs/core": ["@vectojs/core@1.9.2", "", {}, "sha512-FnCigvU/THdpW4TJzPLMCG6WTtdPKIWvjElb80O9K/SPGIlEaC2shIKzjs7iszFfxTSweI42tEtG2IYCaCPuCg=="],
+    "@vectojs/core": ["@vectojs/core@1.11.1", "", {}, "sha512-m9asot4G/WCFtK1Ri5pF4qXVVBJsB7b8Z/iVV4uXSS/QzxYjLLYpyNq4Oz4RuUe0KnDqq1erK5YH5W1ZXNOzrg=="],
 
-    "@vectojs/ui": ["@vectojs/ui@1.9.5", "", { "dependencies": { "marked": "^18.0.6", "mathjax-full": "^3.2.2" }, "peerDependencies": { "@vectojs/core": ">=1.8.0 <2.0.0" } }, "sha512-QeNuHitwnva860wq33D8YCgOsJ/Y3KEwlkavdKjBciN9mCnoMlXLfbIiFIdvyLyt2HXpdaSng0AO+ck4Yg6V8A=="],
+    "@vectojs/ui": ["@vectojs/ui@1.11.3", "", { "dependencies": { "marked": "^18.0.6", "mathjax-full": "^3.2.2" }, "peerDependencies": { "@vectojs/core": ">=1.8.0 <2.0.0" } }, "sha512-jfKZjzcDMUzo9ood9zKzgOIMH0J4DrW40NUt22imsCA+H0ki9yoJ8M1iSHX3HOgbfgEOg7ltiY6+y3r2lscqyQ=="],
 
     "@vemjs/core": ["@vemjs/core@workspace:packages/core"],
 

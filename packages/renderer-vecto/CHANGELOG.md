@@ -1,5 +1,12 @@
 # @vemjs/renderer-vecto
 
+## 0.4.9
+
+### Patch Changes
+
+- 7a2414a: Upgrade @vectojs/core to ^1.11.1 and @vectojs/ui to ^1.11.3.
+  The focus() type mismatch from 1.11.0 is resolved in 1.11.1.
+
 ## 0.4.8
 
 ### Patch Changes
