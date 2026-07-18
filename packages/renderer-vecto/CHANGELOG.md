@@ -1,5 +1,18 @@
 # @vemjs/renderer-vecto
 
+## 0.4.7
+
+### Patch Changes
+
+- 6eb5c20: - :set number/:set relativenumber persistence (survives buffer switch and page refresh via onCreateOptions + activeDefaultLayoutConfig + localStorage)
+  - Jump list: Ctrl-o/Ctrl-i navigation
+  - Buffer dedup: reopening the same file no longer creates duplicate tabs
+  - gu/gU added to parser as valid g-prefix commands
+  - Ctrl-o/Ctrl-i added to parser commands
+  - executeSetOption made public for host-side option restoration
+- Updated dependencies [6eb5c20]
+  - @vemjs/core@0.7.0
+
 ## 0.4.6
 
 ### Patch Changes
