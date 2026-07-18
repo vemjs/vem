@@ -5,7 +5,7 @@ import { VemWorkspace } from './Workspace';
 import { createWebFsProvider, type PickedDirectory, type WorkspaceFsProvider } from './FsProvider';
 
 /** Height reserved above the file tree for the "Close" workspace-switch button. */
-const TREE_HEADER_HEIGHT = 34;
+const TREE_HEADER_HEIGHT = 44;
 
 export class WorkspaceExplorer extends UIComponent {
   private panelGroup: PanelGroup;
@@ -49,31 +49,30 @@ export class WorkspaceExplorer extends UIComponent {
     // (see getA11yAttributes) stays meaningful to screen readers, since
     // Button has no separate icon-vs-accessible-name concept.
     const SIDEBAR_BTN_SIZE = 44;
-    const SIDEBAR_BTN_GAP = 8;
 
     this.openBtn = new Button('Dir', {
       onClick: () => this.handleOpenFolder(),
-      bg: '#1e293b', // slate-800
-      hoverBg: '#334155',
-      font: '13px monospace',
-      color: '#e2e8f0',
-      radius: 4,
+      bg: '#000000',
+      hoverBg: '#1a1a1a',
+      font: '11px monospace',
+      color: '#5f87d7',
+      radius: 2,
       width: SIDEBAR_BTN_SIZE,
       height: SIDEBAR_BTN_SIZE,
     });
-    this.openBtn.setPosition(15, 15);
+    this.openBtn.setPosition(8, 8);
 
     this.openFileBtn = new Button('File', {
       onClick: () => this.handleOpenFile(),
-      bg: '#1e293b',
-      hoverBg: '#334155',
-      font: '13px monospace',
-      color: '#e2e8f0',
-      radius: 4,
+      bg: '#000000',
+      hoverBg: '#1a1a1a',
+      font: '11px monospace',
+      color: '#d0d0d0',
+      radius: 2,
       width: SIDEBAR_BTN_SIZE,
       height: SIDEBAR_BTN_SIZE,
     });
-    this.openFileBtn.setPosition(15 + SIDEBAR_BTN_SIZE + SIDEBAR_BTN_GAP, 15);
+    this.openFileBtn.setPosition(8 + SIDEBAR_BTN_SIZE + 4, 8);
 
     // "Close" the open folder — restores the Dir/File buttons so a different
     // folder can be opened. Otherwise handleOpenFolder() is unreachable once
@@ -82,11 +81,11 @@ export class WorkspaceExplorer extends UIComponent {
     // switch workspaces?" with no path to answer it.
     this.closeWorkspaceBtn = new Button('Close', {
       onClick: () => this.closeWorkspace(),
-      bg: '#1e293b',
-      hoverBg: '#334155',
+      bg: '#000000',
+      hoverBg: '#1a1a1a',
       font: '11px monospace',
-      color: '#94a3b8',
-      radius: 4,
+      color: '#5f87d7',
+      radius: 2,
       width: 60,
       height: 22,
     });
