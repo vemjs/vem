@@ -1,5 +1,13 @@
 # @vemjs/renderer-vecto
 
+## 0.4.8
+
+### Patch Changes
+
+- df99530: Throttle scene redraws to ~30fps during rapid keyboard input: holding j/k
+  no longer triggers a full canvas render on every browser key repeat event,
+  fixing janky cursor movement on high-DPI displays.
+
 ## 0.4.7
 
 ### Patch Changes
