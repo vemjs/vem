@@ -694,23 +694,75 @@ describe('VemEditorEntity IME composition (Fcitx5, Pinyin, etc.)', () => {
     expect(state.getMode()).toBe('INSERT');
   });
 
-  it('inserts the committed text once composition ends via the change event', () => {
+  /**
+   * The fix trusts ONLY our own real compositionstart/compositionend DOM
+   * listeners attached to the shadow textarea — never the `composition`
+   * field VectoJS forwards on the 'change' event, which is indistinguishable
+   * from ordinary keydown noise once a composition has ended (both read as
+   * null). This mock textarea captures the registered listeners so tests
+   * can simulate a real IME lifecycle without a full jsdom/Scene setup.
+   */
+  const makeMockA11yTextarea = (entity: any) => {
+    const listeners: Record<string, Array<() => void>> = {};
+    const el = {
+      addEventListener: (type: string, cb: () => void) => {
+        (listeners[type] ??= []).push(cb);
+      },
+      focus() {},
+    };
+    Object.defineProperty(entity, 'scene', {
+      configurable: true,
+      value: {
+        getA11yElement: () => el,
+        markDirty() {},
+      },
+    });
+    const fire = (type: string) => listeners[type]?.forEach((cb) => cb());
+    return { el, fire };
+  };
+
+  it('inserts the committed text once composition ends via real compositionstart/compositionend', () => {
     const state = new VemEditorState('');
     const entity = new VemEditorEntity(state) as any;
+    const { fire } = makeMockA11yTextarea(entity);
     state.setMode('INSERT');
 
-    // Mid-composition 'change' events (composition still set) are ignored.
+    // Attaches lazily on the first keydown/change/focus — trigger it via focus.
+    entity.emit('focus', {});
+
+    fire('compositionstart');
+    // Mid-composition 'change' events (still composing) are ignored.
     entity.emit('change', { value: '你', composition: { start: 0, length: 1 } });
     expect(state.getText()).toBe('');
 
-    // Composition committed: composition is null, value is the final text.
+    // Composition committed: the browser fires compositionend, then the
+    // final 'change' carrying the committed text, synchronously.
+    fire('compositionend');
     entity.emit('change', { value: '你好', composition: null });
     expect(state.getText()).toBe('你好');
+  });
+
+  it('ignores a change event with a composition-shaped value when there was never a real compositionstart', () => {
+    const state = new VemEditorState('');
+    const entity = new VemEditorEntity(state) as any;
+    makeMockA11yTextarea(entity);
+    state.setMode('INSERT');
+    entity.emit('focus', {});
+
+    // No compositionstart ever fired — this must not be trusted just
+    // because it carries `composition: null`, matching what a queued
+    // direct-keystroke 'change'/'input' event looks like in production.
+    entity.emit('change', { value: '你好', composition: null });
+    expect(state.getText()).toBe('');
   });
 
   it('does not insert composed text outside INSERT mode', () => {
     const state = new VemEditorState('');
     const entity = new VemEditorEntity(state) as any;
+    const { fire } = makeMockA11yTextarea(entity);
+    entity.emit('focus', {});
+    fire('compositionstart');
+    fire('compositionend');
     // NORMAL mode by default.
     entity.emit('change', { value: '你好', composition: null });
     expect(state.getText()).toBe('');

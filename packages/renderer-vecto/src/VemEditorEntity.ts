@@ -88,8 +88,47 @@ export class VemEditorEntity extends UIComponent {
         .catch(() => {});
     }
 
+    // IME composition tracking (Fcitx5, Pinyin/Zhuyin, etc.): the shadow
+    // textarea's native compositionstart/compositionend events are the ONLY
+    // reliable signal that text came from an IME rather than direct key
+    // input — see the long comment above the 'change' handler below for why
+    // @vectojs/core's forwarded `e.composition` field can't be trusted for
+    // this. Attached as early as possible (from the very first 'keydown',
+    // well before the a11y element exists in most cases so it also
+    // re-attaches from 'change' and updateFromState) so no composition can
+    // ever start before our own listeners are in place.
+    let isComposing = false;
+    // True for exactly the one 'change'/'input' that fires synchronously
+    // inside compositionend's own listener chain (VectoJS's forward() call)
+    // — the single event carrying the final committed text. Every other
+    // 'change' — mid-composition previews included — must NOT be inserted:
+    // previews are visual-only until the user confirms them, and inserting
+    // each one would duplicate the eventual commit.
+    let justCommitted = false;
+    let composingAttached: HTMLTextAreaElement | null = null;
+    const attachCompositionListeners = () => {
+      const el = this.scene?.getA11yElement(this.id) as HTMLTextAreaElement | undefined;
+      if (!el || el === composingAttached) return;
+      composingAttached = el;
+      el.addEventListener('compositionstart', () => {
+        isComposing = true;
+      });
+      el.addEventListener('compositionend', () => {
+        if (isComposing) justCommitted = true;
+        isComposing = false;
+        // Clear the one-shot flag right after the synchronous forward()
+        // chain this listener triggers has had a chance to run — any
+        // 'change'/'input' arriving later (queued direct-keystroke noise)
+        // must not be mistaken for the commit.
+        queueMicrotask(() => {
+          justCommitted = false;
+        });
+      });
+    };
+
     // Register accessibility input handlers
     this.on('keydown', (e: any) => {
+      attachCompositionListeners();
       const keyboardEvent = e.nativeEvent as KeyboardEvent;
       if (!keyboardEvent) return;
 
@@ -200,23 +239,31 @@ export class VemEditorEntity extends UIComponent {
       this.updateFromState();
     });
 
-    // IME composition (Fcitx5, Pinyin/Zhuyin, etc.): @vectojs/core's a11y
-    // projection emits 'change' with the shadow textarea's value once a
-    // composition commits (composition becomes null again). The 'keydown'
-    // handler above ignores composing keystrokes entirely, so this is the
-    // only path composed text reaches the buffer.
-    let lastComposedValue = '';
+    // IME composition (Fcitx5, Pinyin/Zhuyin, etc.): the shadow textarea's
+    // native compositionstart/compositionend events are the ONLY reliable
+    // signal that text came from an IME rather than direct key input.
+    //
+    // @vectojs/core's forwarded 'change' event also carries a `composition`
+    // field, but it is read from a variable that VectoJS itself resets to
+    // null on every compositionend AND is simply absent (null) for ordinary
+    // keystrokes — so `e.composition` cannot distinguish "just-committed IME
+    // text" from "plain keydown noise" on the same event. Under load (slow
+    // page, network latency delaying a11y sync vs. keydown ordering) that
+    // ambiguity manifested as text corruption: entire buffer contents
+    // re-inserted whenever a keystroke's queued 'change'/'input' event
+    // (fired by every one of VectoJS's input/change/keyup/click/select
+    // listeners on the shadow textarea) carried a value that no longer
+    // matched a length/content heuristic.
+    // Fix: only text committed between our own compositionstart and its
+    // matching compositionend (see the flag declared above) is ever treated
+    // as IME input; every other 'change' event (regardless of what value it
+    // carries) is ignored, because non-composing text entry is already
+    // fully handled by the 'keydown' handler above.
     this.on('change', (e: any) => {
-      if (e.composition) return;
+      attachCompositionListeners();
+      if (!justCommitted) return; // not the one commit event — mid-composition preview or direct-keystroke noise
       const value = (e.value as string | undefined) ?? '';
-      // Only process IME/multi-step composition commits, not direct key
-      // presses: in NORMAL mode, 'i'/'a' switch to INSERT without inserting
-      // the trigger key as text; in INSERT mode every key is already routed
-      // through the keydown handler so processing the a11y value here would
-      // duplicate it (the "" → "i" → "" → "hello" → "" cycle). Direct
-      // single-char values are already handleKey'd by the keydown handler.
-      if (!value || value.length === 1 || value === lastComposedValue) return;
-      lastComposedValue = value;
+      if (!value) return;
 
       if (this.editorState.getMode() === 'INSERT') {
         for (const ch of value) {
@@ -228,7 +275,6 @@ export class VemEditorEntity extends UIComponent {
 
       const el = this.scene?.getA11yElement(this.id) as HTMLTextAreaElement | undefined;
       if (el) el.value = '';
-      lastComposedValue = '';
     });
 
     // System-clipboard wiring for `:set clipboard=unnamed` — core stays
@@ -245,6 +291,7 @@ export class VemEditorEntity extends UIComponent {
     }
 
     this.on('focus', () => {
+      attachCompositionListeners(); // IME composition requires focus first
       this.isFocused = true;
       this.throttledMarkDirty();
       if (this.editorState.getClipboardMode() === 'system' && navigator.clipboard) {
