@@ -1,6 +1,22 @@
-## 0.4.10\n\n### Patch Changes\n\n- Fix a11y change handler duplicating text on i/a after ESC\n
-
 # @vemjs/renderer-vecto
+
+## 0.4.15
+
+### Patch Changes
+
+- Fix severe text corruption bug: typing in INSERT mode (including pressing `i`/`a` to enter it, or pressing Enter for newlines) could duplicate or scramble large portions of the buffer under real network/rendering latency.
+
+  Root cause: the previous IME-composition detection trusted a `composition` field forwarded by `@vectojs/core`'s accessibility layer on every `change`/`input` event from the shadow textarea. That field is `null` both for a just-committed IME composition AND for an ordinary direct keystroke — the two cases are indistinguishable from the event payload alone. Under load (slow page load, a11y sync racing with keydown), a queued `change` event carrying stale/full buffer text was misidentified as a composition commit and re-inserted verbatim.
+
+  Fix: attach dedicated `compositionstart`/`compositionend` listeners directly on the shadow textarea and track composition state ourselves. Only the one `change` event that fires synchronously inside `compositionend`'s own listener chain (the real IME commit) is ever inserted as text; every other `change` event is ignored.
+
+  Also includes: `zz`/`zb` fallback when `visibleLines` hasn't synced yet, and a text-render clip fix so scrolled buffer text no longer paints under the status/command bar.
+
+## 0.4.10
+
+### Patch Changes
+
+- Fix a11y change handler duplicating text on i/a after ESC
 
 ## 0.4.9
 
