@@ -16,12 +16,12 @@ export const CTRL_VIM_KEYS: Record<string, string> = {
   b: '<C-b>', // page up
   e: '<C-e>', // scroll line down
   y: '<C-y>', // scroll line up
-  o: '<C-o>', // (reserved: jumplist) — captured so the browser open dialog stays shut
+  o: '<C-o>', // jumplist backward
+  i: '<C-i>', // jumplist forward
+  a: '<C-a>', // increment number
+  x: '<C-x>', // decrement number
+  g: '<C-g>', // show file status
 };
 
-/**
- * Ctrl-combos we always swallow (preventDefault) even though nothing in the
- * editor is wired to them yet — save/print/find-next/…; letting them through
- * hijacks the tab instead of doing nothing.
- */
+/** Ctrl-combos we always swallow (preventDefault). */
 export const PREVENT_CTRL_KEYS = new Set(['s', 'p', 'g', 'j', 'k', 'l']);

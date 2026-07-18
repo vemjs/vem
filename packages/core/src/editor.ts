@@ -222,6 +222,16 @@ export class VemEditorState {
   /** The cursor position BEFORE the last change (for g;/g,). */
   private changeList: Position[] = [];
   /** Jump list (Ctrl-o/Ctrl-i): oldest entries at index 0. */
+  private toggleAlternateFileCallbacks: (() => void)[] = [];
+
+  public onToggleAlternateFile(callback: () => void): void {
+    this.toggleAlternateFileCallbacks.push(callback);
+  }
+
+  private triggerToggleAlternateFile(): void {
+    for (const cb of this.toggleAlternateFileCallbacks) cb();
+  }
+
   private jumpList: Position[] = [];
   private jumpListIndex: number = -1;
   /** Number of visible lines in the viewport, set by the renderer (for H/M/L). */
@@ -1542,6 +1552,64 @@ export class VemEditorState {
           this.joinLinesNoSpace(cmd.count);
           break;
 
+        // --- ga: show character code ---
+        case 'ga': {
+          const c = this.buffer.getLine(this.cursor.line)[this.cursor.character];
+          if (c) {
+            const dec = c.charCodeAt(0);
+            const hex = dec.toString(16);
+            this.statusMessage = `${c}  <${dec}>  Hex ${hex},  Octal ${dec.toString(8)}`;
+          } else {
+            this.statusMessage = 'NUL';
+          }
+          break;
+        }
+
+        // --- g8: show UTF-8 byte sequence ---
+        case 'g8': {
+          const c = this.buffer.getLine(this.cursor.line)[this.cursor.character];
+          if (c) {
+            const bytes: string[] = [];
+            for (let i = 0; i < c.length; i++) {
+              bytes.push(c.charCodeAt(i).toString(16));
+            }
+            this.statusMessage = `UTF-8: ${bytes.join(' ')}`;
+          }
+          break;
+        }
+
+        // --- K: lookup keyword under cursor ---
+        case 'K': {
+          const word = this.getWordAtCursor();
+          if (word) {
+            this.statusMessage = `:help ${word}`;
+            // Fall through to the existing help system via callback
+          }
+          break;
+        }
+
+        // --- gq: format text (simple reflow) ---
+        case 'gq': {
+          this.saveStateForUndo();
+          this.formatText(this.cursor.line);
+          break;
+        }
+
+        // --- <C-g>: show file status ---
+        case '<C-g>': {
+          const lines = this.buffer.getLineCount();
+          this.statusMessage = `"Buffer" ${lines}L, ${this.cursor.line + 1}:${
+            this.cursor.character + 1
+          }`;
+          break;
+        }
+
+        // --- <C-^>: toggle alternate file ---
+        case '<C-^>': {
+          this.triggerToggleAlternateFile();
+          break;
+        }
+
         // --- z. / z- / z<CR>: redraw viewport ---
         case 'z.':
           this.triggerScrollToLine(
@@ -1765,6 +1833,10 @@ export class VemEditorState {
       this.triggerSplit('horizontal');
     } else if (base === 'set') {
       this.executeSetOption(arg);
+    } else if (base === 'noh' || base === 'nohlsearch') {
+      // :noh[lsearch] — clear search highlight
+      this.highlightLine = undefined;
+      this.statusMessage = '';
     } else if (base === 's') {
       // :s/pattern/replacement/flags — line substitute
       // :%s/pattern/replacement/flags — global substitute
@@ -1916,6 +1988,30 @@ export class VemEditorState {
     this.buffer.deleteLines(start + 1, end);
     this.cursor.character = text.length;
     this.desiredCol = this.cursor.character;
+  }
+
+  /** `gq`: format text by reflowing lines to textWidth. */
+  private formatText(line: number): void {
+    const textWidth = 78; // Vim default 'textwidth'
+    const text = this.buffer.getLine(line);
+    if (text.length <= textWidth) return;
+    const indent = text.match(/^\s*/)?.[0] ?? '';
+    let remaining = text.trim();
+    const newLines: string[] = [];
+    while (remaining.length > 0) {
+      if (remaining.length <= textWidth - indent.length) {
+        newLines.push(indent + remaining);
+        break;
+      }
+      let split = remaining.lastIndexOf(' ', textWidth - indent.length);
+      if (split <= 0) split = textWidth - indent.length;
+      newLines.push(indent + remaining.substring(0, split));
+      remaining = remaining.substring(split + 1);
+    }
+    this.buffer.setLine(line, newLines[0]);
+    for (let i = 1; i < newLines.length; i++) {
+      this.buffer.insertLine(line + i, newLines[i]);
+    }
   }
 
   /** Indent or outdent a range of lines by `amount` spaces (negative = outdent). */
