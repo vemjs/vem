@@ -165,7 +165,7 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
 
   if (mode === 'VISUAL') {
     // In Visual mode, d, c, y, x are immediate commands
-    const visualCommands = ['d', 'c', 'y', 'x', 'Escape', 'v', 'V', '<C-v>'];
+    const visualCommands = ['d', 'c', 'y', 'x', 'Escape', 'v', 'V', '<C-v>', 'gu', 'gU'];
     if (visualCommands.includes(remStr)) {
       result.count = count1;
       result.command = remStr;

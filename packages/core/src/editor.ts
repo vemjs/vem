@@ -2014,11 +2014,18 @@ export class VemEditorState {
     if (op === 'd' || op === 'x' || op === 'c' || op === 'y') {
       this.saveStateForUndo();
       this.operateOnVisualSelection(op);
-      if (op === 'c') {
-        this.setMode('INSERT');
-      } else {
-        this.setMode('NORMAL');
-      }
+      if (op === 'c') this.setMode('INSERT');
+      else this.setMode('NORMAL');
+    } else if (op === 'gu') {
+      this.saveStateForUndo();
+      const sel = this.visualSelection;
+      if (sel) this.toggleCaseRange(sel.anchor.line, sel.active.line, false);
+      this.setMode('NORMAL');
+    } else if (op === 'gU') {
+      this.saveStateForUndo();
+      const sel = this.visualSelection;
+      if (sel) this.toggleCaseRange(sel.anchor.line, sel.active.line, true);
+      this.setMode('NORMAL');
     }
   }
 
