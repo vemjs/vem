@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { VemEditorState } from './editor';
 
 describe('VemEditorState', () => {
@@ -492,6 +492,11 @@ describe('dot-repeat (.)', () => {
 });
 
 describe('system clipboard integration (:set clipboard=unnamed)', () => {
+  beforeEach(() => {
+    VemEditorState.register = null;
+    VemEditorState.clipboardMode = 'internal';
+  });
+
   const type = (editor: VemEditorState, keys: string) => {
     for (const k of keys) editor.handleKey(k);
   };

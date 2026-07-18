@@ -174,6 +174,9 @@ export class VemEditorState {
     activeDefaultTheme = { ...DEFAULT_THEME };
     activeDefaultLayoutConfig = { ...DEFAULT_LAYOUT_CONFIG };
     VemEditorState.didCreateStateCallbacks = [];
+    VemEditorState.register = null;
+    VemEditorState.clipboardMode = 'internal';
+    VemEditorState.clipboardProvider = null;
   }
 
   public theme: VemTheme = { ...activeDefaultTheme };
@@ -191,9 +194,9 @@ export class VemEditorState {
   private desiredCol: number = 0;
   private buffer: VimBuffer;
   private undoManager: UndoManager;
-  private register: RegisterContent | null = null;
-  private clipboardMode: 'internal' | 'system' = 'internal';
-  private clipboardProvider: ClipboardProvider | null = null;
+  private static register: RegisterContent | null = null;
+  private static clipboardMode: 'internal' | 'system' = 'internal';
+  private static clipboardProvider: ClipboardProvider | null = null;
   private pendingKeys: string[] = [];
   private visualSelection: VisualSelection | null = null;
   private isInsertMutated = false;
@@ -611,31 +614,31 @@ export class VemEditorState {
   }
 
   public getRegister(): RegisterContent | null {
-    return this.register;
+    return VemEditorState.register;
   }
 
   /** Write every yank/delete to `this.register`, and mirror it out to the
    * system clipboard too when `:set clipboard=unnamed` is active. */
   private setRegister(content: RegisterContent): void {
-    this.register = content;
-    if (this.clipboardMode === 'system') {
-      this.clipboardProvider?.write(content.text);
+    VemEditorState.register = content;
+    if (VemEditorState.clipboardMode === 'system') {
+      VemEditorState.clipboardProvider?.write(content.text);
     }
   }
 
   /** `internal` (default `"` register only) or `system` (`:set clipboard=unnamed`). */
   public getClipboardMode(): 'internal' | 'system' {
-    return this.clipboardMode;
+    return VemEditorState.clipboardMode;
   }
 
   /** Programmatic equivalent of `:set clipboard=unnamed` — used by ConfigLoader. */
   public setClipboardMode(mode: 'internal' | 'system'): void {
-    this.clipboardMode = mode;
+    VemEditorState.clipboardMode = mode;
   }
 
   /** Host-supplied system-clipboard write backend — see {@link ClipboardProvider}. */
   public setClipboardProvider(provider: ClipboardProvider | null): void {
-    this.clipboardProvider = provider;
+    VemEditorState.clipboardProvider = provider;
   }
 
   /**
@@ -645,8 +648,8 @@ export class VemEditorState {
    * A no-op unless `:set clipboard=unnamed` is active.
    */
   public setSystemClipboardText(text: string): void {
-    if (this.clipboardMode !== 'system') return;
-    this.register = { text, type: 'char' };
+    if (VemEditorState.clipboardMode !== 'system') return;
+    VemEditorState.register = { text, type: 'char' };
   }
 
   public getCommandText(): string {
@@ -962,8 +965,8 @@ export class VemEditorState {
         // Ctrl-r in INSERT: insert from register
         // We need to await the next key. For now, paste the unnamed register.
         this.saveStateForUndo();
-        if (this.register) {
-          this.handleCharInputInInsert(this.register.text);
+        if (VemEditorState.register) {
+          this.handleCharInputInInsert(VemEditorState.register.text);
         }
         this.triggerChange();
         return;
@@ -2048,9 +2051,9 @@ export class VemEditorState {
       const value = option.substring(eq + 1);
       if (key === 'clipboard' || key === 'cb') {
         if (value === 'unnamed' || value === 'unnamedplus') {
-          this.clipboardMode = 'system';
+          VemEditorState.clipboardMode = 'system';
         } else if (value === '') {
-          this.clipboardMode = 'internal';
+          VemEditorState.clipboardMode = 'internal';
         } else {
           this.statusMessage = `E474: Invalid argument: clipboard=${value}`;
         }
@@ -2692,9 +2695,9 @@ export class VemEditorState {
   }
 
   private paste(before: boolean): void {
-    if (!this.register) return;
+    if (!VemEditorState.register) return;
 
-    const { text, type } = this.register;
+    const { text, type } = VemEditorState.register;
 
     if (type === 'line') {
       const targetLine = before ? this.cursor.line : this.cursor.line + 1;
