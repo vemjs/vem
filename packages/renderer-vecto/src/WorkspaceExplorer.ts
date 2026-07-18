@@ -216,6 +216,10 @@ export class WorkspaceExplorer extends UIComponent {
     this.leftPanel.add(this.closeWorkspaceBtn);
     this.leftPanel.add(this.treeView);
     this.scene?.markDirty();
+    // After opening a directory, return keyboard focus to the editor canvas
+    // so the user can continue typing without first having to click into the
+    // text area (the Explorer buttons stole focus from the a11y textarea).
+    this.restoreEditorFocus();
 
     // Trigger directory opened callbacks
     for (const cb of this.openDirectoryCallbacks) {
@@ -225,6 +229,7 @@ export class WorkspaceExplorer extends UIComponent {
         console.error('Error executing openDirectory callback:', e);
       }
     }
+    this.restoreEditorFocus();
   }
 
   /**
@@ -420,5 +425,18 @@ export class WorkspaceExplorer extends UIComponent {
       r.closePath();
       r.fill(theme.sidebarBg);
     }
+  }
+
+  /**
+   * After any Explorer operation (open file/folder, close workspace),
+   * return keyboard focus to the active editor pane's a11y textarea
+   * so the user can type commands/text without first clicking into the
+   * editor area. Without this, clicking an Explorer button steals focus
+   * from the canvas, and keyboard routing sees the focus on an Explorer
+   * element (neither canvas nor body) and silently drops all keys.
+   */
+  private restoreEditorFocus(): void {
+    const c = this.scene?.canvas as HTMLElement | undefined;
+    c?.focus?.();
   }
 }
