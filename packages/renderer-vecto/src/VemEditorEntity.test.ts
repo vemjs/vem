@@ -797,3 +797,65 @@ describe('VemEditorEntity click-to-cell mapping', () => {
     expect(state.getCursor()).toEqual({ line: 0, character: 0 });
   });
 });
+
+describe('VemEditorEntity throttledMarkDirty', () => {
+  /**
+   * Regression: an earlier edit that batch-replaced every `this.scene?.markDirty()`
+   * call site with `this.throttledMarkDirty()` accidentally rewrote the ONE call
+   * inside `throttledMarkDirty()`'s own body too, turning the rate-limiter into
+   * `this.throttledMarkDirty()` calling itself instead of `this.scene?.markDirty()`
+   * — every keystroke/click/scroll appeared to "mark dirty" but the real scene
+   * method was never reached, so the canvas only ever repainted via VectoJS's
+   * own idle-throttle side effects. This is exactly the "hjkl feels laggy"
+   * symptom class: the state machine updated the cursor correctly every time,
+   * the render request just silently vanished into a self-call that returned
+   * without ever touching `scene`.
+   */
+  const makeEntityWithMarkDirtySpy = (text: string) => {
+    const state = new VemEditorState(text);
+    const entity = new VemEditorEntity(state) as any;
+    let markDirtyCalls = 0;
+    // Needs a real addEventListener stub — the keydown handler's first call
+    // is attachCompositionListeners(), which registers compositionstart/end
+    // on whatever getA11yElement() returns.
+    const el = { addEventListener: () => {}, focus() {} };
+    Object.defineProperty(entity, 'scene', {
+      configurable: true,
+      value: {
+        getA11yElement: () => el,
+        markDirty: () => {
+          markDirtyCalls++;
+        },
+      },
+    });
+    return { state, entity, getMarkDirtyCalls: () => markDirtyCalls };
+  };
+
+  const press = (entity: any, key: string) => {
+    entity.emit('keydown', {
+      nativeEvent: { key, ctrlKey: false, preventDefault: () => {} },
+    });
+  };
+
+  it('a keydown reaches the real scene.markDirty(), not just its own throttle wrapper', () => {
+    const { state, entity, getMarkDirtyCalls } = makeEntityWithMarkDirtySpy('alpha');
+
+    press(entity, 'l');
+    expect(state.getCursor()).toEqual({ line: 0, character: 1 });
+    expect(getMarkDirtyCalls()).toBeGreaterThan(0);
+  });
+
+  it('rate-limits repeated calls within the throttle window but still reaches scene.markDirty at least once', () => {
+    const { state, entity, getMarkDirtyCalls } = makeEntityWithMarkDirtySpy('alphabet');
+
+    for (let i = 0; i < 5; i++) {
+      press(entity, 'l');
+    }
+    expect(state.getCursor()).toEqual({ line: 0, character: 5 });
+    // Every call happens synchronously and well within the 33ms throttle
+    // window, so the real markDirty should fire exactly once for this burst
+    // — the important assertion is it fires AT ALL (>=1), not that it's
+    // throttled (the bug made it fire zero times, ever).
+    expect(getMarkDirtyCalls()).toBeGreaterThanOrEqual(1);
+  });
+});

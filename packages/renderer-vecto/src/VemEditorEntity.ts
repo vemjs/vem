@@ -25,7 +25,7 @@ export class VemEditorEntity extends UIComponent {
     const now = performance.now();
     if (now - this.lastMarkDirtyTime < VemEditorEntity.MIN_DIRTY_INTERVAL) return;
     this.lastMarkDirtyTime = now;
-    this.throttledMarkDirty();
+    this.scene?.markDirty();
   }
   private selectedAutocompleteIndex = 0;
   private isFocused = false;
@@ -237,6 +237,7 @@ export class VemEditorEntity extends UIComponent {
 
       this.editorState.handleKey(feedKey);
       this.updateFromState();
+      this.throttledMarkDirty();
     });
 
     // IME composition (Fcitx5, Pinyin/Zhuyin, etc.): the shadow textarea's
