@@ -46,6 +46,11 @@ export interface RegisterContent {
  */
 export interface ClipboardProvider {
   write(text: string): void;
+  /** Called before a paste when the static register is empty and
+   * clipboard=unnamed — the host should try an on-demand read from the
+   * system clipboard. Optional: if absent, paste falls back to the
+   * existing focus-based read timing (page load / pane switch). */
+  triggerRead?(): void;
 }
 
 export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'hint';
@@ -2695,6 +2700,17 @@ export class VemEditorState {
   }
 
   private paste(before: boolean): void {
+    // If clipboard=unnamed and the register is empty, try an on-demand read
+    // from the system clipboard right now. The focus-based read might have
+    // failed silently, and a stale empty register hides clipboard content.
+    if (!VemEditorState.register && VemEditorState.clipboardMode === 'system') {
+      // The provider's read is async, but the host calls setSystemClipboardText
+      // synchronously here when a pre-fetched value is waiting — falling
+      // through to the "no register" return below is harmless when the read
+      // isn't ready yet (the user presses p again after the clipboard
+      // resolves, just like the current focus-based trigger).
+      VemEditorState.clipboardProvider?.triggerRead?.();
+    }
     if (!VemEditorState.register) return;
 
     const { text, type } = VemEditorState.register;

@@ -284,9 +284,20 @@ export class VemEditorEntity extends UIComponent {
     // is async everywhere. Gaining focus is the natural refresh point: it's
     // exactly when the user is about to `p` something they copied elsewhere.
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      const readFromOS = async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          this.editorState.setSystemClipboardText(text);
+        } catch {
+          // Permission not granted, or clipboard empty — silently skip.
+        }
+      };
       this.editorState.setClipboardProvider({
         write: (text: string) => {
           navigator.clipboard.writeText(text).catch(() => {});
+        },
+        triggerRead: () => {
+          readFromOS();
         },
       });
     }
