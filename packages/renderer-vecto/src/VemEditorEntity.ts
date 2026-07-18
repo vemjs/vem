@@ -207,9 +207,15 @@ export class VemEditorEntity extends UIComponent {
     // only path composed text reaches the buffer.
     let lastComposedValue = '';
     this.on('change', (e: any) => {
-      if (e.composition) return; // still composing — wait for it to commit
+      if (e.composition) return;
       const value = (e.value as string | undefined) ?? '';
-      if (!value || value === lastComposedValue) return;
+      // Only process IME/multi-step composition commits, not direct key
+      // presses: in NORMAL mode, 'i'/'a' switch to INSERT without inserting
+      // the trigger key as text; in INSERT mode every key is already routed
+      // through the keydown handler so processing the a11y value here would
+      // duplicate it (the "" → "i" → "" → "hello" → "" cycle). Direct
+      // single-char values are already handleKey'd by the keydown handler.
+      if (!value || value.length === 1 || value === lastComposedValue) return;
       lastComposedValue = value;
 
       if (this.editorState.getMode() === 'INSERT') {
@@ -220,8 +226,6 @@ export class VemEditorEntity extends UIComponent {
         this.throttledMarkDirty();
       }
 
-      // Reset the shadow textarea so the next composition starts from an
-      // empty value instead of re-delivering the same text on its next commit.
       const el = this.scene?.getA11yElement(this.id) as HTMLTextAreaElement | undefined;
       if (el) el.value = '';
       lastComposedValue = '';
