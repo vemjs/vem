@@ -118,4 +118,129 @@ describe('Vim Keybinding Parser', () => {
       isValid: false,
     });
   });
+
+  /**
+   * Regression: the g/z/Z/bracket-prefix lookup tables are keyed by the
+   * SECOND character only (e.g. `gPrefixCommands.u === 'gu'`), but the
+   * lookups originally indexed them by the FULL two-char sequence
+   * (`gPrefixCommands['gu']`, `zPrefixCommands['zz']`, etc.) — a key that
+   * never exists in any of these tables, so the lookup was always
+   * `undefined` and every one of these commands silently fell through to
+   * `isValid: false` in production. Only `gg` "worked", because it has its
+   * own separately hardcoded motion check earlier in the function that
+   * never depended on the broken lookup at all — which is exactly why this
+   * bug class went unnoticed: the one command anyone tried by habit first
+   * (`gg`) was never actually exercising the shared lookup path.
+   */
+  describe('g/z/Z/bracket two-key prefix commands (regression)', () => {
+    it('resolves every g-prefix command via the shared lookup', () => {
+      const cases: Array<[string, string]> = [
+        ['f', 'gf'],
+        ['v', 'gv'],
+        ['i', 'gi'],
+        [';', 'g;'],
+        [',', 'g,'],
+        ['u', 'gu'],
+        ['U', 'gU'],
+        ['q', 'gq'],
+        ['J', 'gJ'],
+        ['a', 'ga'],
+        ['8', 'g8'],
+      ];
+      for (const [second, expected] of cases) {
+        expect(parseKeys(['g', second])).toEqual({
+          count: 1,
+          command: expected,
+          isComplete: true,
+          isValid: true,
+        });
+      }
+    });
+
+    it('still resolves gg as a motion, not a gPrefixCommands lookup hit', () => {
+      // gPrefixCommands.g happens to equal the string 'gg' too, so this is
+      // the one case that must NOT go through the shared command lookup.
+      expect(parseKeys(['g', 'g'])).toEqual({
+        count: 1,
+        motion: 'gg',
+        isComplete: true,
+        isValid: true,
+      });
+    });
+
+    it('resolves every z-prefix command', () => {
+      const cases: Array<[string, string]> = [
+        ['z', 'zz'],
+        ['t', 'zt'],
+        ['b', 'zb'],
+      ];
+      for (const [second, expected] of cases) {
+        expect(parseKeys(['z', second])).toEqual({
+          count: 1,
+          command: expected,
+          isComplete: true,
+          isValid: true,
+        });
+      }
+    });
+
+    it('resolves every Z-prefix command', () => {
+      expect(parseKeys(['Z', 'Z'])).toEqual({
+        count: 1,
+        command: 'ZZ',
+        isComplete: true,
+        isValid: true,
+      });
+      expect(parseKeys(['Z', 'Q'])).toEqual({
+        count: 1,
+        command: 'ZQ',
+        isComplete: true,
+        isValid: true,
+      });
+    });
+
+    it('resolves every bracket-prefix section-jump command', () => {
+      const cases: Array<[string[], string]> = [
+        [['[', '['], '[['],
+        [[']', ']'], ']]'],
+        [['[', ']'], '[]'],
+        [[']', '['], ']['],
+      ];
+      for (const [keys, expected] of cases) {
+        expect(parseKeys(keys)).toEqual({
+          count: 1,
+          command: expected,
+          isComplete: true,
+          isValid: true,
+        });
+      }
+    });
+
+    it('resolves gu/gU as commands in Visual mode too', () => {
+      expect(parseKeys(['g', 'u'], 'VISUAL')).toEqual({
+        count: 1,
+        command: 'gu',
+        isComplete: true,
+        isValid: true,
+      });
+      expect(parseKeys(['g', 'U'], 'VISUAL')).toEqual({
+        count: 1,
+        command: 'gU',
+        isComplete: true,
+        isValid: true,
+      });
+    });
+
+    it('resolves gu/gU after an operator (e.g. an operator-pending g-command)', () => {
+      // Not a realistic Vim sequence on its own, but exercises the same
+      // remOpStr-based lookup path that had the identical bug.
+      expect(parseKeys(['d', 'g', 'u'])).toEqual({
+        count: 1,
+        operator: 'd',
+        command: 'gu',
+        isComplete: true,
+        isValid: true,
+      });
+    });
+  });
 });

@@ -128,9 +128,14 @@ const ZPrefixCommands: Record<string, string> = {
   Q: 'ZQ', // quit without saving
 };
 
+// Keyed by [first char][second char] pair, resolved separately below since
+// both `[` and `]` are valid firsts AND seconds (unlike g/z/Z, which only
+// ever repeat or combine with a small fixed alphabet).
 const bracketPrefixCommands: Record<string, string> = {
-  '[': '[[', // section backward
-  ']': '[]', // section backward to end
+  '[[': '[[', // section backward
+  '[]': '[]', // section backward to end
+  ']]': ']]', // section forward
+  '][': '][', // section forward to end
 };
 
 export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCommand {
@@ -191,11 +196,11 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       result.isValid = true;
       return result;
     }
-    const gResolved = gPrefixCommands[remStr];
-    if (gResolved && gResolved.startsWith('g')) {
-      // gv, gi, etc. in Visual mode
+    // gv, gi, gu, gU, etc. in Visual mode — keyed by the second character,
+    // same fix as the NORMAL-mode g-prefix lookup below.
+    if (remStr.length === 2 && remStr[0] === 'g' && gPrefixCommands[remStr[1]]) {
       result.count = count1;
-      result.command = gResolved;
+      result.command = gPrefixCommands[remStr[1]];
       result.isComplete = true;
       result.isValid = true;
       return result;
@@ -330,9 +335,17 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    // g-resolved motions after operator (only when preceded by g)
-    if (remOpStr.startsWith('g') && gPrefixCommands[remOpStr]) {
-      result.command = gPrefixCommands[remOpStr];
+    // g-resolved motions after operator (only when preceded by g) — keyed
+    // by the second character, same fix as the other g-prefix lookups.
+    // 'gg' excluded: dgg must use the dedicated motion check below, not
+    // this command lookup (gPrefixCommands.g happens to equal 'gg').
+    if (
+      remOpStr.length === 2 &&
+      remOpStr[0] === 'g' &&
+      remOpStr !== 'gg' &&
+      gPrefixCommands[remOpStr[1]]
+    ) {
+      result.command = gPrefixCommands[remOpStr[1]];
       result.isComplete = true;
       result.isValid = true;
       return result;
@@ -391,33 +404,52 @@ export function parseKeys(keys: string[], mode: EditorMode = 'NORMAL'): ParsedCo
       return result;
     }
 
-    // g-prefix resolved commands (only when preceded by g)
-    if (remNormalStr.startsWith('g') && gPrefixCommands[remNormalStr]) {
-      result.command = gPrefixCommands[remNormalStr];
+    // g-prefix resolved commands (only when preceded by g). The lookup
+    // tables are keyed by the SECOND character only (e.g. gPrefixCommands.u
+    // === 'gu'), not by the full two-char sequence — remNormalStr.slice(1)
+    // is the correct key. (Previously indexed by the full 'gu'/'zz'/'ZZ'/
+    // '[[' string, which is never a key in any of these tables — silently
+    // always undefined, so every g/z/Z/bracket command except the
+    // separately hardcoded 'gg' was unreachable and fell through to
+    // isValid: false.)
+    // 'gg' is excluded: it's a motion (result.motion, handled by
+    // moveCursorByMotion), not a standalone command, despite
+    // gPrefixCommands.g happening to equal the string 'gg' — the dedicated
+    // `remNormalStr === 'gg'` motion check further below must win for it.
+    if (
+      remNormalStr.length === 2 &&
+      remNormalStr[0] === 'g' &&
+      remNormalStr !== 'gg' &&
+      gPrefixCommands[remNormalStr[1]]
+    ) {
+      result.command = gPrefixCommands[remNormalStr[1]];
       result.isComplete = true;
       result.isValid = true;
       return result;
     }
 
     // z-prefix resolved commands (only when preceded by z)
-    if (remNormalStr.startsWith('z') && zPrefixCommands[remNormalStr]) {
-      result.command = zPrefixCommands[remNormalStr];
+    if (remNormalStr.length === 2 && remNormalStr[0] === 'z' && zPrefixCommands[remNormalStr[1]]) {
+      result.command = zPrefixCommands[remNormalStr[1]];
       result.isComplete = true;
       result.isValid = true;
       return result;
     }
 
     // Z-prefix resolved commands (only when preceded by Z)
-    if (remNormalStr.startsWith('Z') && ZPrefixCommands[remNormalStr]) {
-      result.command = ZPrefixCommands[remNormalStr];
+    if (remNormalStr.length === 2 && remNormalStr[0] === 'Z' && ZPrefixCommands[remNormalStr[1]]) {
+      result.command = ZPrefixCommands[remNormalStr[1]];
       result.isComplete = true;
       result.isValid = true;
       return result;
     }
 
-    // bracket-prefix resolved commands (only when preceded by [ or ])
+    // bracket-prefix resolved commands (only when preceded by [ or ]) —
+    // this table is keyed by the full two-char sequence, unlike g/z/Z above,
+    // since both characters vary (`[[`, `[]`, `]]`, `][`).
     if (
-      (remNormalStr.startsWith('[') || remNormalStr.startsWith(']')) &&
+      remNormalStr.length === 2 &&
+      (remNormalStr[0] === '[' || remNormalStr[0] === ']') &&
       bracketPrefixCommands[remNormalStr]
     ) {
       result.command = bracketPrefixCommands[remNormalStr];
