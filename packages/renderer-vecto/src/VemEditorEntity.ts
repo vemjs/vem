@@ -13,9 +13,20 @@ export class VemEditorEntity extends UIComponent {
 
   private charWidth = 8.4;
   private lineHeight = 21; // Extended row height for a premium readable spacing
-  private scrollY = 0; // scroll offset in lines
-  private scrollX = 0; // scroll offset in characters — keeps the cursor visible on long lines (Vim's 'nowrap' sidescroll)
+  /** Tracks the last rAF timestamp when the scene was marked dirty, for rate-limiting. */
+  private lastMarkDirtyTime = 0;
+  /** Minimum ms between scene markDirty calls during rapid key input. */
+  private static readonly MIN_DIRTY_INTERVAL = 33; // ~30fps max for rendering during keyboard repeat
+  private scrollY = 0;
+  private scrollX = 0;
   private autocompleteItems: { label: string; detail?: string }[] = [];
+
+  private throttledMarkDirty(): void {
+    const now = performance.now();
+    if (now - this.lastMarkDirtyTime < VemEditorEntity.MIN_DIRTY_INTERVAL) return;
+    this.lastMarkDirtyTime = now;
+    this.throttledMarkDirty();
+  }
   private selectedAutocompleteIndex = 0;
   private isFocused = false;
   // Whether the owning WorkspaceLayout considers this pane Vim's "current
@@ -72,7 +83,7 @@ export class VemEditorEntity extends UIComponent {
         ?.then(() => {
           measure();
           this.updateFromState();
-          this.scene?.markDirty();
+          this.throttledMarkDirty();
         })
         .catch(() => {});
     }
@@ -133,7 +144,7 @@ export class VemEditorEntity extends UIComponent {
 
         this.editorState.setCursor(targetLine, targetChar);
         this.updateFromState();
-        this.scene?.markDirty();
+        this.throttledMarkDirty();
         return;
       }
 
@@ -206,7 +217,7 @@ export class VemEditorEntity extends UIComponent {
           this.editorState.handleKey(ch);
         }
         this.updateFromState();
-        this.scene?.markDirty();
+        this.throttledMarkDirty();
       }
 
       // Reset the shadow textarea so the next composition starts from an
@@ -231,7 +242,7 @@ export class VemEditorEntity extends UIComponent {
 
     this.on('focus', () => {
       this.isFocused = true;
-      this.scene?.markDirty();
+      this.throttledMarkDirty();
       if (this.editorState.getClipboardMode() === 'system' && navigator.clipboard) {
         navigator.clipboard
           .readText()
@@ -242,7 +253,7 @@ export class VemEditorEntity extends UIComponent {
 
     this.on('blur', () => {
       this.isFocused = false;
-      this.scene?.markDirty();
+      this.throttledMarkDirty();
     });
 
     // Pointer → buffer cell on the monospace grid (shared by click + drag).
@@ -290,7 +301,7 @@ export class VemEditorEntity extends UIComponent {
         };
       }
       this.updateFromState();
-      this.scene?.markDirty();
+      this.throttledMarkDirty();
     };
 
     this.on('pointerdown', (e: any) => {
@@ -339,7 +350,7 @@ export class VemEditorEntity extends UIComponent {
       }
       state.setCursor(cell.line, cell.character);
       this.updateFromState();
-      this.scene?.markDirty();
+      this.throttledMarkDirty();
     });
 
     // No pointerleave→end: aborting when the cursor briefly outruns the entity
@@ -363,7 +374,7 @@ export class VemEditorEntity extends UIComponent {
       const maxScroll = Math.max(0, lineCount - 1);
       const notches = Math.sign(deltaY) * WHEEL_LINES_PER_NOTCH;
       this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY + notches));
-      this.scene?.markDirty();
+      this.throttledMarkDirty();
     });
 
     this.editorState.onScrollToLine((line: number) => {
@@ -371,7 +382,7 @@ export class VemEditorEntity extends UIComponent {
         0,
         Math.min(Math.max(0, this.editorState.getBuffer().getLineCount() - 1), line),
       );
-      this.scene?.markDirty();
+      this.throttledMarkDirty();
     });
 
     this.updateFromState();
