@@ -395,11 +395,13 @@ export class WorkspaceExplorer extends UIComponent {
     const theme = activeState.theme;
     const layout = activeState.layoutConfig;
 
-    // Apply button styling
-    this.openBtn.bg = theme.statusBarBg;
-    this.openBtn.hoverBg = theme.statusBarBg;
-    this.openBtn.color = theme.fg;
-    this.closeWorkspaceBtn.color = theme.fg;
+    // Dir/File/Close buttons keep their fixed Vim-black styling (set once in
+    // the constructor) regardless of the active theme — this used to
+    // overwrite bg/hoverBg/color with theme.statusBarBg/theme.fg every
+    // frame, which on the default Vim-black theme meant a light-gray
+    // statusBarBg background behind the Dir button's blue label, an
+    // unreadable low-contrast combo the theme sync never accounted for.
+    // netrw's own chrome doesn't reflow with :colorscheme either.
 
     if (this.treeView) {
       /* eslint-disable-next-line no-underscore-dangle */
