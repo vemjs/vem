@@ -859,3 +859,53 @@ describe('VemEditorEntity throttledMarkDirty', () => {
     expect(getMarkDirtyCalls()).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('VemEditorEntity bare modifier keydowns', () => {
+  /**
+   * Regression: pressing a Shifted key (e.g. Shift+G to type 'G') fires TWO
+   * separate native keydown events in every browser — one for 'Shift' alone,
+   * then one for 'G' — with 'Shift' arriving first. The entity previously
+   * fed every keydown's `.key` straight into `editorState.handleKey()`
+   * unconditionally, so 'd' + 'Shift' + 'G' all reached the state machine.
+   * With pendingKeys=['d'] awaiting a motion after the 'd' operator,
+   * handleKey('Shift') failed to parse (Shift is not a valid motion/text
+   * object) and cleared pendingKeys *before* the real 'G' ever arrived — so
+   * `dG` silently became `d` (dropped) followed by a bare `G` (jump to last
+   * line, nothing deleted). Every operator combined with an uppercase or
+   * shift-modified motion (dG, dW, dE, etc.) was affected identically.
+   */
+  const press = (entity: any, key: string) => {
+    entity.emit('keydown', {
+      nativeEvent: { key, ctrlKey: false, preventDefault: () => {} },
+    });
+  };
+
+  it('a bare Shift keydown between an operator and its motion does not corrupt pendingKeys', () => {
+    const state = new VemEditorState('line 1\nline 2\nline 3\nline 4\nline 5');
+    const entity = new VemEditorEntity(state) as any;
+    state.handleKey('j'); // cursor to line 1 (0-indexed)
+
+    press(entity, 'd');
+    expect(state.getPendingKeys()).toEqual(['d']);
+
+    // The bare Shift keydown that precedes 'G' in every real browser.
+    press(entity, 'Shift');
+    expect(state.getPendingKeys()).toEqual(['d']); // must NOT be cleared
+
+    press(entity, 'G');
+    expect(state.getText()).toBe('line 1'); // dG deleted line 2 through the end
+    expect(state.getPendingKeys()).toEqual([]);
+  });
+
+  it('ignores every bare modifier key, not just Shift', () => {
+    const state = new VemEditorState('hello');
+    const entity = new VemEditorEntity(state) as any;
+
+    for (const modifier of ['Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph']) {
+      press(entity, modifier);
+    }
+    // None of these should have reached the state machine at all.
+    expect(state.getText()).toBe('hello');
+    expect(state.getMode()).toBe('NORMAL');
+  });
+});

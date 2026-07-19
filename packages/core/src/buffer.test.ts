@@ -56,9 +56,28 @@ describe('UndoManager', () => {
     current = ['hello', 'world'];
 
     const undone = history.undo(current);
-    expect(undone).toEqual(['hello']);
+    expect(undone?.lines).toEqual(['hello']);
 
-    const redone = history.redo(undone!);
-    expect(redone).toEqual(['hello', 'world']);
+    const redone = history.redo(undone!.lines);
+    expect(redone?.lines).toEqual(['hello', 'world']);
+  });
+
+  it('reports Vim-style seq numbers and a change count on undo/redo', () => {
+    const history = new UndoManager();
+    history.push(['a']);
+    const undone = history.undo(['a', 'b']);
+    expect(undone?.seq).toBe(0);
+    expect(undone?.changes).toBe(1);
+    expect(typeof undone?.timestamp).toBe('number');
+
+    const redone = history.redo(undone!.lines);
+    expect(redone?.seq).toBe(1);
+    expect(redone?.changes).toBe(1);
+  });
+
+  it('returns null when there is nothing left to undo/redo', () => {
+    const history = new UndoManager();
+    expect(history.undo(['x'])).toBeNull();
+    expect(history.redo(['x'])).toBeNull();
   });
 });

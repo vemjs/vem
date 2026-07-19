@@ -11,6 +11,19 @@ export class VemEditorEntity extends UIComponent {
   private editorState: VemEditorState;
   private commandBar: CommandBar;
 
+  /**
+   * The host app's own version string (e.g. "0.4.21" for vem-website, a
+   * desktop release tag for vem-desktop), shown on the intro splash so users
+   * can tell which build they're on without opening devtools — matching
+   * real Vim always printing "VIM - Vi IMproved <version>" on `:intro`.
+   * Set once via {@link VemEditorEntity.setVersion} from the host's own
+   * package.json/build metadata; empty by default (no line is drawn).
+   */
+  private static hostVersion = '';
+  public static setVersion(version: string): void {
+    VemEditorEntity.hostVersion = version;
+  }
+
   private charWidth = 8.4;
   private lineHeight = 21; // Extended row height for a premium readable spacing
   /** Tracks the last rAF timestamp when the scene was marked dirty, for rate-limiting. */
@@ -140,6 +153,36 @@ export class VemEditorEntity extends UIComponent {
       if (keyboardEvent.isComposing || keyboardEvent.key === 'Process') return;
 
       const key = keyboardEvent.key;
+
+      // A bare modifier keydown (pressing just Shift, Ctrl, Alt, Meta,
+      // CapsLock, etc. with no other key held) carries no printable or
+      // actionable content on its own — every browser fires it as its own
+      // keydown BEFORE the combo key's event (e.g. holding Shift then
+      // pressing G fires 'Shift' then 'G' as two separate keydowns).
+      // Feeding 'Shift' into the Vim state machine corrupted every
+      // operator+Shifted-motion combo: with pendingKeys=['d'] awaiting a
+      // motion, handleKey('Shift') failed to parse and cleared pendingKeys
+      // before the real 'G' ever arrived, so `dG` silently became a no-op
+      // followed by a bare `G` (jump to last line, nothing deleted) —
+      // exactly the reported "dG jumps to the bottom instead of deleting".
+      const bareModifierKeys = new Set([
+        'Shift',
+        'Control',
+        'Alt',
+        'Meta',
+        'CapsLock',
+        'AltGraph',
+        'Fn',
+        'FnLock',
+        'Hyper',
+        'Super',
+        'ScrollLock',
+        'NumLock',
+        'Symbol',
+        'SymbolLock',
+      ]);
+      if (bareModifierKeys.has(key)) return;
+
       const vimModeEnabled = (this.editorState as any).vimModeEnabled ?? true;
 
       // Handle Arrow key navigation manually in default (non-Vim) mode to avoid Vem core blocking
@@ -492,8 +535,11 @@ export class VemEditorEntity extends UIComponent {
    * color like Vim.
    */
   private drawIntro(r: IRenderer, theme: { fg: string; accent: string }): void {
+    const titleLine = VemEditorEntity.hostVersion
+      ? `VEM - Vim, Enhanced & Modal  v${VemEditorEntity.hostVersion}`
+      : 'VEM - Vim, Enhanced & Modal';
     const lines: string[] = [
-      'VEM - Vim, Enhanced & Modal',
+      titleLine,
       '',
       'a canvas-native modal editor',
       'Vem is free and open source',

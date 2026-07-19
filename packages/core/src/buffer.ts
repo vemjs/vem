@@ -128,24 +128,51 @@ export class VimBuffer {
   }
 }
 
+/** One entry in the undo tree: the buffer snapshot plus when it was
+ * recorded, so `u`/`<C-r>` can report Vim's own
+ * "N change(s); {before|after} #M  T {seconds|minutes} ago" message. */
+interface UndoEntry {
+  lines: string[];
+  seq: number;
+  timestamp: number;
+}
+
 export class UndoManager {
-  private undoStack: string[][] = [];
-  private redoStack: string[][] = [];
+  private undoStack: UndoEntry[] = [];
+  private redoStack: UndoEntry[] = [];
+  /** Monotonically increasing change sequence number, Vim's `:undolist` #. */
+  private nextSeq = 1;
+  /** The seq of the entry currently pushed onto undoStack's top (i.e. the
+   * state BEFORE the change in flight); 0 means "original, unmodified". */
+  private currentSeq = 0;
 
   public push(lines: string[]): void {
-    this.undoStack.push([...lines]);
+    this.undoStack.push({ lines: [...lines], seq: this.currentSeq, timestamp: Date.now() });
+    this.currentSeq = this.nextSeq++;
     this.redoStack = [];
   }
 
-  public undo(currentLines: string[]): string[] | null {
+  /** Returns the restored lines plus Vim-style change-count/seq metadata,
+   * or null if there's nothing left to undo. */
+  public undo(
+    currentLines: string[],
+  ): { lines: string[]; changes: number; seq: number; timestamp: number } | null {
     if (this.undoStack.length === 0) return null;
-    this.redoStack.push([...currentLines]);
-    return this.undoStack.pop() || null;
+    const entry = this.undoStack.pop()!;
+    const changes = Math.abs(currentLines.length - entry.lines.length) || 1;
+    this.redoStack.push({ lines: [...currentLines], seq: this.currentSeq, timestamp: Date.now() });
+    this.currentSeq = entry.seq;
+    return { lines: entry.lines, changes, seq: entry.seq, timestamp: entry.timestamp };
   }
 
-  public redo(currentLines: string[]): string[] | null {
+  public redo(
+    currentLines: string[],
+  ): { lines: string[]; changes: number; seq: number; timestamp: number } | null {
     if (this.redoStack.length === 0) return null;
-    this.undoStack.push([...currentLines]);
-    return this.redoStack.pop() || null;
+    const entry = this.redoStack.pop()!;
+    const changes = Math.abs(currentLines.length - entry.lines.length) || 1;
+    this.undoStack.push({ lines: [...currentLines], seq: this.currentSeq, timestamp: Date.now() });
+    this.currentSeq = entry.seq;
+    return { lines: entry.lines, changes, seq: entry.seq, timestamp: entry.timestamp };
   }
 }

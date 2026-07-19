@@ -2297,6 +2297,7 @@ export class VemEditorState {
         type: 'line',
       });
 
+      const lineSpan = endLine - startLine + 1;
       if (op === 'd' || op === 'c') {
         this.buffer.deleteLines(startLine, endLine);
         this.cursor.line = Math.min(this.cursor.line, this.buffer.getLineCount() - 1);
@@ -2306,6 +2307,12 @@ export class VemEditorState {
           this.buffer.insertLine(this.cursor.line, '');
           this.setMode('INSERT');
         }
+        // Vim's 'report' default (2): only announce multi-line changes.
+        if (lineSpan >= 2) {
+          this.statusMessage = `${lineSpan} fewer line${lineSpan === 1 ? '' : 's'}`;
+        }
+      } else if (op === 'y' && lineSpan >= 2) {
+        this.statusMessage = `${lineSpan} line${lineSpan === 1 ? '' : 's'} yanked`;
       }
       return;
     }
@@ -2357,6 +2364,7 @@ export class VemEditorState {
         type: 'line',
       });
 
+      const lineSpan = e.line - s.line + 1;
       if (op === 'd' || op === 'c') {
         this.buffer.deleteLines(s.line, e.line);
         this.cursor.line = Math.min(s.line, this.buffer.getLineCount() - 1);
@@ -2366,6 +2374,11 @@ export class VemEditorState {
           this.buffer.insertLine(this.cursor.line, '');
           this.setMode('INSERT');
         }
+        if (lineSpan >= 2) {
+          this.statusMessage = `${lineSpan} fewer line${lineSpan === 1 ? '' : 's'}`;
+        }
+      } else if (op === 'y' && lineSpan >= 2) {
+        this.statusMessage = `${lineSpan} line${lineSpan === 1 ? '' : 's'} yanked`;
       }
     } else {
       // Character-wise operation
@@ -2764,27 +2777,51 @@ export class VemEditorState {
     return !this.modified && this.buffer.getLineCount() === 1 && this.buffer.getLine(0) === '';
   }
 
+  /** Vim's own "N seconds/minutes/hours ago" wording for :undolist / u / <C-r>. */
+  private static formatAgo(timestamp: number): string {
+    const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+    if (seconds < 60) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+    const hours = Math.round(minutes / 60);
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+
   public undo(): void {
-    const prevState = this.undoManager.undo(this.buffer.getLines());
-    if (prevState) {
-      this.buffer.setLines(prevState);
+    const result = this.undoManager.undo(this.buffer.getLines());
+    if (result) {
+      this.buffer.setLines(result.lines);
       // Clamp cursor
       this.cursor.line = Math.min(this.cursor.line, this.buffer.getLineCount() - 1);
       const lineLen = this.buffer.getLine(this.cursor.line).length;
       this.cursor.character = Math.min(this.cursor.character, Math.max(0, lineLen - 1));
       this.desiredCol = this.cursor.character;
+      // Vim: "1 change; before #2  0 seconds ago" (or "N changes;" for >1).
+      const n = result.changes;
+      this.statusMessage = `${n} change${n === 1 ? '' : 's'}; before #${
+        result.seq
+      }  ${VemEditorState.formatAgo(result.timestamp)}`;
+    } else {
+      this.statusMessage = 'Already at oldest change';
     }
   }
 
   public redo(): void {
-    const nextState = this.undoManager.redo(this.buffer.getLines());
-    if (nextState) {
-      this.buffer.setLines(nextState);
+    const result = this.undoManager.redo(this.buffer.getLines());
+    if (result) {
+      this.buffer.setLines(result.lines);
       // Clamp cursor
       this.cursor.line = Math.min(this.cursor.line, this.buffer.getLineCount() - 1);
       const lineLen = this.buffer.getLine(this.cursor.line).length;
       this.cursor.character = Math.min(this.cursor.character, Math.max(0, lineLen - 1));
       this.desiredCol = this.cursor.character;
+      // Vim: "1 change; after #3  0 seconds ago" (or "N changes;" for >1).
+      const n = result.changes;
+      this.statusMessage = `${n} change${n === 1 ? '' : 's'}; after #${
+        result.seq
+      }  ${VemEditorState.formatAgo(result.timestamp)}`;
+    } else {
+      this.statusMessage = 'Already at newest change';
     }
   }
 }

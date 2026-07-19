@@ -1021,3 +1021,75 @@ describe('VemEditorState.executePluginCommand', () => {
     expect(executed).toEqual(['layout.toggleSidebar']);
   });
 });
+
+describe('Vim-style status messages (undo/redo, multi-line yank/delete)', () => {
+  const type = (editor: VemEditorState, keys: string) => {
+    for (const k of keys) editor.handleKey(k);
+  };
+
+  it('u reports "N change(s); before #M  ... ago", not silence', () => {
+    const editor = new VemEditorState('hello');
+    type(editor, 'A');
+    type(editor, ' world');
+    editor.handleKey('Escape');
+    editor.handleKey('u');
+    expect(editor.statusMessage).toMatch(/^1 change; before #0 {2}\d+ seconds? ago$/);
+  });
+
+  it('<C-r> reports "N change(s); after #M  ... ago"', () => {
+    const editor = new VemEditorState('hello');
+    type(editor, 'A');
+    type(editor, ' world');
+    editor.handleKey('Escape');
+    editor.handleKey('u');
+    editor.handleKey('<C-r>');
+    expect(editor.statusMessage).toMatch(/^1 change; after #1 {2}\d+ seconds? ago$/);
+  });
+
+  it('u with nothing left to undo says so instead of silently no-oping', () => {
+    const editor = new VemEditorState('hello');
+    editor.handleKey('u');
+    expect(editor.statusMessage).toBe('Already at oldest change');
+  });
+
+  it('<C-r> with nothing left to redo says so instead of silently no-oping', () => {
+    const editor = new VemEditorState('hello');
+    editor.handleKey('<C-r>');
+    expect(editor.statusMessage).toBe('Already at newest change');
+  });
+
+  it('2dd reports "2 fewer lines" (Vim report=2 default: multi-line only)', () => {
+    const editor = new VemEditorState('a\nb\nc\nd');
+    type(editor, '2dd');
+    expect(editor.getText()).toBe('c\nd');
+    expect(editor.statusMessage).toBe('2 fewer lines');
+  });
+
+  it('plain dd (one line) stays silent, matching Vim report=2', () => {
+    const editor = new VemEditorState('a\nb\nc');
+    type(editor, 'dd');
+    expect(editor.getText()).toBe('b\nc');
+    expect(editor.statusMessage).toBe('');
+  });
+
+  it('3yy reports "3 lines yanked"', () => {
+    const editor = new VemEditorState('a\nb\nc\nd');
+    type(editor, '3yy');
+    expect(editor.statusMessage).toBe('3 lines yanked');
+    expect(editor.getRegister()).toEqual({ text: 'a\nb\nc\n', type: 'line' });
+  });
+
+  it('plain yy (one line) stays silent, matching Vim report=2', () => {
+    const editor = new VemEditorState('a\nb');
+    type(editor, 'yy');
+    expect(editor.statusMessage).toBe('');
+  });
+
+  it('dG (operator + linewise motion) reports "N fewer lines" too', () => {
+    const editor = new VemEditorState('a\nb\nc\nd\ne');
+    type(editor, 'jj'); // cursor to line 2 ('c')
+    type(editor, 'dG'); // delete from 'c' to the last line
+    expect(editor.getText()).toBe('a\nb');
+    expect(editor.statusMessage).toBe('3 fewer lines');
+  });
+});
