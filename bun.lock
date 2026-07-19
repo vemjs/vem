@@ -26,9 +26,9 @@
     },
     "packages/plugin-api": {
       "name": "@vemjs/plugin-api",
-      "version": "0.1.11",
+      "version": "0.1.12",
       "dependencies": {
-        "@vemjs/core": "^0.7.0",
+        "@vemjs/core": "^0.8.0",
       },
     },
     "packages/renderer-vecto": {
@@ -527,8 +527,6 @@
     "@oxc-resolver/binding-wasm32-wasi/@emnapi/runtime": ["@emnapi/runtime@1.11.0", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-55coeOFKHv1ywEcUXJtWU5f+Jr/W5tZDvZig8DLKSwUN1JpROQ4rk/SNOQiFWmaR/VKF4zuFyW1B8JduOSv6Pg=="],
 
     "@vemjs/lsp-client/@vemjs/core": ["@vemjs/core@0.7.3", "", {}, "sha512-989sAQult0h+qtsruCtyZZhhJq0Z+a+AvloGRgKE4fqHV/qVQVupDYMS62lOcEfS2eD/QtLVasCYSxyXLFlWwQ=="],
-
-    "@vemjs/plugin-api/@vemjs/core": ["@vemjs/core@0.7.3", "", {}, "sha512-989sAQult0h+qtsruCtyZZhhJq0Z+a+AvloGRgKE4fqHV/qVQVupDYMS62lOcEfS2eD/QtLVasCYSxyXLFlWwQ=="],
 
     "log-update/slice-ansi": ["slice-ansi@7.1.2", "", { "dependencies": { "ansi-styles": "^6.2.1", "is-fullwidth-code-point": "^5.0.0" } }, "sha512-iOBWFgUX7caIZiuutICxVgX1SdxwAVFFKwt1EvMYYec/NWO5meOJ6K5uQxhrYBdQJne4KxiqZc+KptFOWFSI9w=="],
 
